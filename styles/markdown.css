@@ -1,0 +1,97 @@
+/* MarkdownRenderer.css */
+
+.markdown-container {
+  /* Padding for the main content area */
+  padding: 20px;
+  line-height: 1.6;
+}
+
+/* ---------------------------------------------------- */
+/* HEADERS (H1, H2, etc.) */
+/* ---------------------------------------------------- */
+.markdown-container h1,
+.markdown-container h2,
+.markdown-container h3 {
+  color: var(--color-dark-text-primary);
+  font-weight: 600;
+  border-bottom: 1px solid var(--color-dark-border);
+  padding-bottom: 0.3em;
+  margin-top: 1.5em;
+  margin-bottom: 0.8em;
+}
+
+.markdown-container h1 {
+  font-size: 2em;
+}
+
+/* ---------------------------------------------------- */
+/* LINKS */
+/* ---------------------------------------------------- */
+.markdown-container a {
+  color: var(--color-dark-accent);
+  text-decoration: none;
+}
+
+.markdown-container a:hover {
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------- */
+/* CODE BLOCKS & INLINE CODE */
+/* ---------------------------------------------------- */
+
+/* Inline Code */
+.markdown-container :not(pre) > code {
+  font-family: 'Consolas', 'Courier New', monospace;
+  background-color: var(--color-dark-bg-secondary); /* Slightly lighter background */
+  color: var(--color-dark-code-text);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+/* Fenced Code Blocks (pre) */
+.markdown-container pre {
+  background-color: var(--color-dark-code-bg);
+  color: var(--color-dark-code-text);
+  padding: 1em;
+  border-radius: 6px;
+  overflow-x: auto; /* Ensure scrolling for wide code */
+  margin-bottom: 1.5em;
+}
+
+.markdown-container pre code {
+  /* Resetting the inline code styles for block code */
+  background: none;
+  padding: 0;
+  font-size: 1em;
+}
+
+/* ---------------------------------------------------- */
+/* BLOCKQUOTES (Similar to callouts/admonitions in Obsidian) */
+/* ---------------------------------------------------- */
+.markdown-container blockquote {
+  border-left: 4px solid var(--color-dark-accent);
+  background-color: var(--color-dark-bg-secondary);
+  color: var(--color-dark-text-secondary);
+  padding: 0.5em 1em;
+  margin: 1em 0;
+  border-radius: 4px;
+}
+
+.markdown-container blockquote p {
+    margin: 0; /* Remove default paragraph margin inside blockquote */
+}
+
+/* ---------------------------------------------------- */
+/* LISTS & HR */
+/* ---------------------------------------------------- */
+.markdown-container ul, .markdown-container ol {
+    padding-left: 2em;
+}
+
+.markdown-container hr {
+    border: none;
+    border-top: 1px solid var(--color-dark-border);
+    margin: 2em 0;
+}
