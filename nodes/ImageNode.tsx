@@ -14,6 +14,7 @@ import {
   $setSelection,
 } from 'lexical';
 
+import { CircleX, X } from 'lucide-react'; 
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 
 
@@ -93,7 +94,7 @@ interface ImageComponentProps {
 function ImageComponent({ src, altText, nodeKey }: ImageComponentProps): React.JSX.Element {
     const [editor] = useLexicalComposerContext();
 
-    const onClick = (event: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+    const onImageClick = (event: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
         event.preventDefault(); 
         
         editor.update(() => {
@@ -119,13 +120,35 @@ function ImageComponent({ src, altText, nodeKey }: ImageComponentProps): React.J
         });
     };
 
+    const onRemoveClick = (event: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
+        event.stopPropagation(); 
+        event.preventDefault();
+
+        editor.update(() => {
+            const node = $getNodeByKey(nodeKey);
+            if ($isImageNode(node)) {
+                node.remove();
+            }
+        });
+    };
+
     return (
-        <div 
-            onClick={onClick}
-            className="relative block w-full outline-none cursor-pointer 
+         <div 
+            onClick={onImageClick}
+            className="relative block w-full outline-none cursor-pointer group 
                        ring-0 focus:ring-2 focus:ring-blue-500" 
             tabIndex={-1} 
         >
+            <button
+                onClick={onRemoveClick}
+                className="absolute top-2 right-2 p-1 rounded-full 
+                           bg-gray-700 text-white shadow-md z-10 
+                           opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label="Remove image"
+            >
+                <X size={20} />
+            </button>
+            
             <img 
                 src={src.length > 0 ? src : undefined} 
                 alt={altText} 
