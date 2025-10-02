@@ -9,7 +9,8 @@ import {
   SerializedLexicalNode,
   $getNodeByKey,
   $getSelection,
-  $createNodeSelection, 
+  $createNodeSelection,
+  $createTextNode, 
   $setSelection,
 } from 'lexical';
 
@@ -88,36 +89,44 @@ interface ImageComponentProps {
   nodeKey: NodeKey;
 }
 
+// ... (Your imports and ImageNode class remain the same)
+
+// ... (Helper Functions and Types remain the same)
+
 function ImageComponent({ src, altText, nodeKey }: ImageComponentProps): React.JSX.Element {
     const [editor] = useLexicalComposerContext();
 
+    // 🚀 RESTORE: This is the original logic to edit via a prompt.
     const onClick = (event: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
-    event.preventDefault(); 
-    
-    editor.update(() => {
-        const node = $getNodeByKey(nodeKey);
+        event.preventDefault(); 
         
-        if ($isImageNode(node)) {
-            const nodeSelection = $createNodeSelection();
-            nodeSelection.add(node.getKey());
-            $setSelection(nodeSelection);
-
-            const newSrc = window.prompt("Enter new Image URL:", node.getSrc());
+        editor.update(() => {
+            const node = $getNodeByKey(nodeKey);
             
-            if (newSrc !== null) {
-                const cleanedSrc = newSrc.trim();
+            if ($isImageNode(node)) {
+                // 1. Select the node (required for editing context)
+                const nodeSelection = $createNodeSelection();
+                nodeSelection.add(node.getKey());
+                $setSelection(nodeSelection);
 
-                if (cleanedSrc.length > 0 && cleanedSrc !== node.getSrc()) {
-                    node.setSrc(cleanedSrc);
-                } else if (cleanedSrc.length === 0 && node.getSrc() !== "") {
-                   
-                    node.setSrc(""); 
+                // 2. Open the prompt to ask for a new URL
+                const newSrc = window.prompt("Enter new Image URL:", node.getSrc());
+                
+                // 3. Validate and update the URL
+                if (newSrc !== null) {
+                    const cleanedSrc = newSrc.trim();
+
+                    if (cleanedSrc.length > 0 && cleanedSrc !== node.getSrc()) {
+                        // Update only if it's a non-empty, different URL
+                        node.setSrc(cleanedSrc);
+                    } else if (cleanedSrc.length === 0 && node.getSrc() !== "") {
+                        // Allows the user to clear the source (handled safely in rendering below)
+                        node.setSrc(""); 
+                    }
                 }
-
             }
-        }
-    });
-};
+        });
+    };
 
     return (
         <div 
@@ -127,7 +136,7 @@ function ImageComponent({ src, altText, nodeKey }: ImageComponentProps): React.J
             tabIndex={-1} 
         >
             <img 
-                
+                // Retaining the critical fix to prevent the browser error on empty string
                 src={src.length > 0 ? src : undefined} 
                 alt={altText} 
                 style={{ 

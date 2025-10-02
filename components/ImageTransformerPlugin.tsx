@@ -1,10 +1,9 @@
-
 import { $createImageNode } from "@/nodes/ImageNode";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { $getSelection, $isRangeSelection, $isTextNode } from "lexical";
 import React from "react";
 
-const IMAGE_REGEX = /\{img:([^,]+),alt:([^}]+)\}/;
+const IMAGE_REGEX = /\{\{([^}]+)\}\}/; 
 
 export function ImageTransformerPlugin() {
     const [editor] = useLexicalComposerContext();
@@ -28,14 +27,17 @@ export function ImageTransformerPlugin() {
 
                 if (match) {
                     editor.update(() => {
-                        const [, url, altText] = match;
+                        const [, url] = match; 
+                        
+                        const hardcodedAltText = 'Image inserted via text shortcut';
                         
                         const imageNode = $createImageNode({
                             src: url.trim(),
-                            altText: altText.trim() || 'Image',
+                            altText: hardcodedAltText,
                         });
 
                         node.setTextContent(textContent.replace(IMAGE_REGEX, ''));
+                        
                         node.insertAfter(imageNode);
                         
                         imageNode.selectNext();

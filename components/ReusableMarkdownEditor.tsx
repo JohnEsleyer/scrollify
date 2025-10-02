@@ -23,43 +23,6 @@ import { $createImageNode, $isImageNode, ImageNode} from '@/nodes/ImageNode';
 import { ImageTransformerPlugin } from './ImageTransformerPlugin';
 
 
-const IMAGE_TRANSFORMER: ElementTransformer = {
-    dependencies: [ImageNode],
-    
-
-    regExp: /\{img:([^,]+),alt:([^}]+)\}\s*$/, 
-    
-    replace: (
-        parentNode: ElementNode, 
-        children: Array<LexicalNode>, 
-        match: string[], 
-        isImport: boolean 
-    ) => {
-        console.log("--- IMAGE TRANSFORMER TRIGGERED ---");
-        
-        const url = match[1].trim(); 
-        const altText = match[2].trim();
-        
-        console.log("Captured Alt Text:", altText);
-        console.log("Captured URL:", url);
-        console.log("Parent Node Type:", parentNode.getType());
-        
-        const imageNode = $createImageNode({
-            src: url, 
-            altText: altText || 'Image', 
-        });
-        
-        parentNode.replace(imageNode); 
-    },
-    
-    type: 'element',
-    
-    export: (node: LexicalNode) => {
-        if (!$isImageNode(node)) { return null; }
-        return `{img:${node.getSrc()},alt:${node.getAltText()}}`;
-    }
-};
-
 const ALL_TRANSFORMERS: Transformer[] = [
     ...CORE_TRANSFORMERS, 
 ];
@@ -156,7 +119,7 @@ export default function ReusableMarkdownEditor({ content, onChange }: ReusableEd
     return (
         <LexicalComposer initialConfig={initialConfig}>
             
-            <div className="editor-container border rounded-lg p-4 shadow-md">
+            <div className="editor-container p-4">
                 
                 <RichTextPlugin
                     contentEditable={<ContentEditable className="content-editable min-h-[150px] outline-none" />}
