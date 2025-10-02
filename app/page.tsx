@@ -1,50 +1,33 @@
-import MarkdownRenderer from '@/components/MarkdownRenderer';
+'use client'
+
 import React from 'react';
-import '@/styles/markdown.css';
+import { EditorState, LexicalEditor } from 'lexical'; 
+import dynamic from 'next/dynamic';
 
-const ExampleComponent: React.FC = () => {
-  const markdownContent = `
-# Hello, Markdown!
+const ReusableMarkdownEditor = dynamic(
+  () => import('@/components/ReusableMarkdownEditor'),
+  { 
+    ssr: false 
+  }
+);
 
-This is a paragraph with some **bold** text and an \`inline code snippet\`.
+function App() {
+    const [editorContent, setEditorContent] = React.useState('{"root":{"children":[{"children":[{"detail":0,"format":0,"mode":"normal","text":"# Welcome!","type":"text","version":1}],"direction":"ltr","format":"","indent":0,"type":"heading","tag":"h1","version":1}],"direction":"ltr","format":"","indent":0,"type":"root","version":1}}');
+    
+    const handleEditorChange = React.useCallback(
+        (editorState: EditorState, _editor: LexicalEditor) => {
+            const jsonString = JSON.stringify(editorState.toJSON());
+            console.log("New JSON State:", jsonString);
+        }, 
+        []
+    );
 
-## Code Example
-
-Here's a block of code with syntax highlighting for TypeScript:
-
-\`\`\`typescript
-import React from 'react';
-
-// Define the component props type
-interface GreetingProps {
-  name: string;
+    return (
+        <ReusableMarkdownEditor 
+            content={editorContent}
+            onChange={handleEditorChange} 
+        />
+    );
 }
 
-const Greeting: React.FC<GreetingProps> = ({ name }) => {
-  return <h1>Hello, {name}!</h1>;
-};
-
-export default Greeting;
-\`\`\`
-
-And here is some Python code:
-
-\`\`\`python
-def factorial(n):
-    if n == 0:
-        return 1
-    else:
-        return n * factorial(n-1)
-
-print(factorial(5))
-\`\`\`
-  `;
-
-  return (
-    <div>
-      <MarkdownRenderer content={markdownContent} />
-    </div>
-  );
-};
-
-export default ExampleComponent;
+export default App;
