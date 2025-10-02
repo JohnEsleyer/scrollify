@@ -139,6 +139,14 @@ function ImageComponent({ src, altText, nodeKey }: ImageComponentProps): React.J
                        ring-0 focus:ring-2 focus:ring-blue-500" 
             tabIndex={-1} 
         >
+          <div 
+            className="absolute top-2 left-2 px-3 py-1 rounded-full 
+                           bg-gray-800 text-white text-xs shadow-md z-10 
+                           opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap"
+          >
+            Click to edit the image URL
+          </div>
+
             <button
                 onClick={onRemoveClick}
                 className="absolute top-2 right-2 p-1 rounded-full 

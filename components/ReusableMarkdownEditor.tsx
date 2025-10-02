@@ -9,7 +9,13 @@ import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { MarkdownShortcutPlugin } from '@lexical/react/LexicalMarkdownShortcutPlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'; 
 
-import { ElementTransformer, Transformer, TRANSFORMERS as CORE_TRANSFORMERS } from '@lexical/markdown'; 
+import { 
+    ElementTransformer, 
+    Transformer, 
+    TRANSFORMERS as CORE_TRANSFORMERS,
+    CODE as CODE_TRANSFORMER,
+    CODE
+} from '@lexical/markdown'; 
 
 import { HeadingNode, QuoteNode } from '@lexical/rich-text';
 import { ListItemNode, ListNode } from '@lexical/list';
@@ -17,14 +23,15 @@ import {
     ParagraphNode, TextNode, EditorState, LexicalEditor, 
     ElementNode, LexicalNode 
 } from 'lexical'; 
-import { CodeNode, CodeHighlightNode } from '@lexical/code'; 
 import { LinkNode } from '@lexical/link'; 
 import { $createImageNode, $isImageNode, ImageNode} from '@/nodes/ImageNode'; 
-import { ImageTransformerPlugin } from './ImageTransformerPlugin';
-
+import { ImageTransformerPlugin } from '../nodes/ImageTransformerPlugin';
+import { CodeHighlightNode, CodeNode } from '@lexical/code';
+import { HighlightPlugin } from './HighlightPlugin';
 
 const ALL_TRANSFORMERS: Transformer[] = [
     ...CORE_TRANSFORMERS, 
+    CODE_TRANSFORMER,
 ];
 
 
@@ -117,7 +124,7 @@ export default function ReusableMarkdownEditor({ content, onChange }: ReusableEd
     const initialConfig = createInitialConfig(content);
     
     return (
-        <LexicalComposer initialConfig={initialConfig}>
+     <LexicalComposer initialConfig={initialConfig}>
             
             <div className="editor-container p-4">
                 
@@ -130,6 +137,10 @@ export default function ReusableMarkdownEditor({ content, onChange }: ReusableEd
                 <HistoryPlugin />
                 <MarkdownShortcutPlugin transformers={ALL_TRANSFORMERS} />
                 <ImageTransformerPlugin /> 
+                
+                {/* 🚀 ADD THE HIGHLIGHTING PLUGIN HERE */}
+                <HighlightPlugin /> 
+                
                 <StateChangeReporter onChange={onChange} />
                 
             </div>
