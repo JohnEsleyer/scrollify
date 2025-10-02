@@ -19,13 +19,15 @@ import {
 } from 'lexical'; 
 import { CodeNode, CodeHighlightNode } from '@lexical/code'; 
 import { LinkNode } from '@lexical/link'; 
-import { ImageNode, $createImageNode, $isImageNode } from '@/nodes/ImageNode'; 
+import { $createImageNode, $isImageNode, ImageNode} from '@/nodes/ImageNode'; 
+import { ImageTransformerPlugin } from './ImageTransformerPlugin';
 
 
 const IMAGE_TRANSFORMER: ElementTransformer = {
-    dependencies: [ImageNode], 
-    regExp: /!\[(.*?)\]\((.*?)\)/, 
+    dependencies: [ImageNode],
     
+
+    regExp: /\{img:([^,]+),alt:([^}]+)\}\s*$/, 
     
     replace: (
         parentNode: ElementNode, 
@@ -33,28 +35,32 @@ const IMAGE_TRANSFORMER: ElementTransformer = {
         match: string[], 
         isImport: boolean 
     ) => {
-        const [, altText, url] = match; 
+        console.log("--- IMAGE TRANSFORMER TRIGGERED ---");
+        
+        const url = match[1].trim(); 
+        const altText = match[2].trim();
+        
+        console.log("Captured Alt Text:", altText);
+        console.log("Captured URL:", url);
+        console.log("Parent Node Type:", parentNode.getType());
         
         const imageNode = $createImageNode({
             src: url, 
-            altText: altText,
+            altText: altText || 'Image', 
         });
         
         parentNode.replace(imageNode); 
-        
     },
+    
     type: 'element',
     
     export: (node: LexicalNode) => {
-        if (!$isImageNode(node)) {
-            return null;
-        }
-        return `![${node.getAltText()}](${node.getSrc()})`;
+        if (!$isImageNode(node)) { return null; }
+        return `{img:${node.getSrc()},alt:${node.getAltText()}}`;
     }
 };
 
 const ALL_TRANSFORMERS: Transformer[] = [
-    IMAGE_TRANSFORMER,
     ...CORE_TRANSFORMERS, 
 ];
 
@@ -103,8 +109,41 @@ const createInitialConfig = (content?: string): InitialConfigType => ({
     ],
     
     theme: {
-        quote: 'bg-gray-100 border-l-4 border-gray-500 p-2 my-2',
+        paragraph: 'text-gray-200 leading-relaxed',
+        
+        heading: {
+            h1: 'text-white text-3xl font-extrabold mt-6 mb-3 border-b pb-1 border-gray-700',
+            h2: 'text-white text-2xl font-bold mt-5 mb-2',
+            h3: 'text-white text-xl font-semibold mt-4 mb-2',
+            h4: 'text-white text-lg font-medium mt-3 mb-1',
+            h5: 'text-white text-base font-medium mt-2',
+            h6: 'text-white text-sm font-normal mt-1',
+        },
+        
+        quote: 'text-gray-400 bg-gray-800 border-l-4 border-gray-500 italic p-3 my-4 rounded-r-md',
+        
+        list: {
+            ul: 'list-disc ml-6 my-3 text-gray-200',
+            ol: 'list-decimal ml-6 my-3 text-gray-200',
+            listitem: 'pl-2 mb-1',
+        },
+        
+  
+        code: 'text-sm font-mono whitespace-pre-wrap bg-gray-900 text-green-300 p-4 my-4 rounded-lg shadow-inner',
+        
+
+        text: {
+            code: 'bg-gray-700 text-yellow-300 px-1 py-0.5 rounded-sm font-mono text-sm',
+            bold: 'font-bold',
+            italic: 'italic',
+            strikethrough: 'line-through',
+        },
+        
+        link: 'text-blue-400 hover:text-blue-300 underline transition-colors duration-150',
+        
+        image: 'my-4 block max-w-full mx-auto shadow-xl rounded-lg border border-gray-700',
     },
+    
     
     onError: (error: Error) => {
         console.error('Lexical caught an error:', error);
@@ -127,6 +166,7 @@ export default function ReusableMarkdownEditor({ content, onChange }: ReusableEd
                 
                 <HistoryPlugin />
                 <MarkdownShortcutPlugin transformers={ALL_TRANSFORMERS} />
+                <ImageTransformerPlugin /> 
                 <StateChangeReporter onChange={onChange} />
                 
             </div>
