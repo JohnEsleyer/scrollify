@@ -4,11 +4,14 @@ import React from 'react';
 import { EditorState, LexicalEditor } from 'lexical'; 
 import dynamic from 'next/dynamic';
 import CodeEditorWebview from '@/components/CodeEditorWeview';
+const WhiteBoard = dynamic(() => import('../components/WhiteBoard'), {
+  ssr: false, // This is crucial for client-side only components like canvas
+});
 
 export default function App() {
     return (
-        <div>
-            <CodeEditorWebview/>
-        </div>
+    <main style={{ display: 'flex', justifyContent: 'center', minHeight: '100vh', paddingTop: '50px' }}>  
+    <WhiteBoard/>
+    </main>
     )
 }
