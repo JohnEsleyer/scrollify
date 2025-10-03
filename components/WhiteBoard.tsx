@@ -295,6 +295,8 @@ const handlePaste = (event: ClipboardEvent) => {
   // --- Event Handlers ---
   const handleMouseDown = (event: MouseEvent) => {
     const pos = getMousePos(event);
+    const isControlOrCommand = event.ctrlKey || event.metaKey; // Check for Ctrl/Cmd key
+
     // Clear text editing mode if active
     if (editingTextId !== null) setEditingTextId(null);
 
@@ -314,7 +316,6 @@ const handlePaste = (event: ClipboardEvent) => {
     } else if (mode === 'select') {
       let hitElement: WhiteboardElement | undefined;
       
-      // Hit Testing Loop (Iterate backwards to select topmost element)
       for (let i = elements.length - 1; i >= 0; i--) {
           const el = elements[i];
           
@@ -346,23 +347,49 @@ const handlePaste = (event: ClipboardEvent) => {
 
       //  Movement Setup or Selection Box Start
       if (hitElement) {
-          if (!selectedElementIds.includes(hitElement.id)) {
-              setSelectedElementIds([hitElement.id]);
-          }
           
-          setIsMoving(true);
-          
-          // Setup the fast path mutable array
-          const elementsToMove = elements.filter(el => selectedElementIds.includes(el.id));
-          setMovingElements(elementsToMove);
+          let currentSelectedIds = selectedElementIds;
 
-          lastPosRef.current = pos; 
+          if (isControlOrCommand) {
+              // --- Multi-Selection Logic (Ctrl/Cmd pressed) ---
+              if (selectedElementIds.includes(hitElement.id)) {
+                  // Deselect
+                  currentSelectedIds = selectedElementIds.filter(id => id !== hitElement.id);
+              } else {
+                  // Add to selection
+                  currentSelectedIds = [...selectedElementIds, hitElement.id];
+              }
+          } else if (!selectedElementIds.includes(hitElement.id)) {
+              // Single Selection (Ctrl/Cmd not pressed and element not selected)
+              currentSelectedIds = [hitElement.id];
+          }
+
+          setSelectedElementIds(currentSelectedIds);
           
-          const startX = hitElement.type === 'line' ? hitElement.points[0].x : hitElement.x;
-          const startY = hitElement.type === 'line' ? hitElement.points[0].y : hitElement.y;
-          setOffset({ x: pos.x - startX, y: pos.y - startY });
+          // Start moving all currently selected elements
+          if (currentSelectedIds.length > 0) {
+              setIsMoving(true);
+              
+              // Setup the fast path mutable array
+              const elementsToMove = elements.filter(el => currentSelectedIds.includes(el.id));
+              setMovingElements(elementsToMove);
+
+              lastPosRef.current = pos; 
+        
+              // Use the first selected element for offset calculation (for single-element selection feel)
+              const firstSelectedEl = elementsToMove[0]; 
+              if (firstSelectedEl) {
+                  const startX = firstSelectedEl.type === 'line' ? firstSelectedEl.points[0].x : firstSelectedEl.x;
+                  const startY = firstSelectedEl.type === 'line' ? firstSelectedEl.points[0].y : firstSelectedEl.y;
+                  setOffset({ x: pos.x - startX, y: pos.y - startY });
+              }
+          } else {
+              // If deselecting the last element with Ctrl/Cmd, start a selection box
+              setSelectionRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
+          }
 
       } else {
+          // No hit, start a new selection box
           setSelectedElementIds([]);
           setSelectionRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
       }
