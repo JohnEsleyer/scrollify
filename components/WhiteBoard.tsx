@@ -470,6 +470,12 @@ const handlePaste = (event: ClipboardEvent) => {
   };
 
   const handleMouseUp = () => {
+
+    if (animationFrameRef.current !== null){
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+
     setIsDrawing(false);
     setIsMoving(false);
     setOffset(null);
@@ -489,9 +495,12 @@ const handlePaste = (event: ClipboardEvent) => {
         setSelectedElementIds(newlySelectedIds);
         setSelectionRect(null);
 
-        if (newlySelectedIds.length > 0) {
+        if (newlySelectedIds.length === 0) {
             setMode('select');
         }
+        
+        // Force a final render to ensure the canvas reflects the new state (no selection rect)
+        setElements(prev => [...prev]);
     }
   };
 
