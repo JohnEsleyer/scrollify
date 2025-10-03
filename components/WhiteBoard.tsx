@@ -33,11 +33,9 @@ type WhiteboardElementType = 'line' | 'text' | 'image';
 
 
 // --- State and Mode Definitions ---
-
 type ToolMode = 'select' | 'draw' | 'text';
 
 // --- Helper Functions ---
-
 const getCanvasContext = (canvas: HTMLCanvasElement | null): CanvasRenderingContext2D | null => {
   return canvas ? canvas.getContext('2d') : null;
 };
@@ -52,8 +50,6 @@ const isInsideText = (x: number, y: number, textEl: TextElement): boolean => {
     );
 };
 
-// --- Whiteboard Component ---
-
 const Whiteboard: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [elements, setElements] = useState<WhiteboardElement[]>([]);
@@ -66,10 +62,7 @@ const Whiteboard: React.FC = () => {
   const [selectedElementIds, setSelectedElementIds] = useState<number[]>([]);
   const [offset, setOffset] = useState<{ x: number; y: number } | null>(null); 
 
-  // Text editing state
   const [editingTextId, setEditingTextId] = useState<number | null>(null);
-
-  // Selection Box state
   const [selectionRect, setSelectionRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   // OPTIMIZATION STATES
@@ -83,8 +76,18 @@ const Whiteboard: React.FC = () => {
 
   // --- Utility Functions ---
 
+const handleDelete = useCallback(() => {
+    if (selectedElementIds.length === 0) return;
 
-  // Inside the Whiteboard component
+    setElements(prevElements => 
+      prevElements.filter(el => !selectedElementIds.includes(el.id))
+    );
+    setSelectedElementIds([]);
+    setEditingTextId(null);
+    setMode('draw'); // Switch back to a default mode
+}, [selectedElementIds]);
+
+
 const handlePaste = (event: ClipboardEvent) => {
     const items = event.clipboardData?.items;
     if (!items) return;
@@ -283,6 +286,24 @@ const handlePaste = (event: ClipboardEvent) => {
         renderElements();
     }
   }, [elements, renderElements, selectedElementIds, editingTextId, selectionRect, isMoving]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only trigger if no text is currently being edited
+      if (editingTextId === null) {
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+          event.preventDefault(); 
+          handleDelete();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleDelete, editingTextId]);
 
   useEffect(() => {
     return () => {
@@ -498,7 +519,7 @@ const handlePaste = (event: ClipboardEvent) => {
         if (newlySelectedIds.length === 0) {
             setMode('select');
         }
-        
+
         // Force a final render to ensure the canvas reflects the new state (no selection rect)
         setElements(prev => [...prev]);
     }
