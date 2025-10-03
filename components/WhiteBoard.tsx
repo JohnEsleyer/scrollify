@@ -1,7 +1,10 @@
 import React, { useRef, useState, useEffect, useCallback, MouseEvent } from 'react';
 
 
-type WhiteboardElementType = 'line' | 'text' | 'image';
+interface ImageElement extends BaseElement {
+  type: 'image';
+  src: string;
+}
 
 interface BaseElement {
   id: number;
@@ -25,7 +28,9 @@ interface TextElement extends BaseElement {
   fontSize: number;
 }
 
-type WhiteboardElement = LineElement | TextElement;
+type WhiteboardElement = LineElement | TextElement | ImageElement; 
+type WhiteboardElementType = 'line' | 'text' | 'image';
+
 
 // --- State and Mode Definitions ---
 
@@ -59,7 +64,7 @@ const Whiteboard: React.FC = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const [selectedElementIds, setSelectedElementIds] = useState<number[]>([]);
-  const [offset, setOffset] = useState<{ x: number; y: number } | null>(null); // Initial click offset (retained for consistency)
+  const [offset, setOffset] = useState<{ x: number; y: number } | null>(null); 
 
   // Text editing state
   const [editingTextId, setEditingTextId] = useState<number | null>(null);
@@ -77,6 +82,58 @@ const Whiteboard: React.FC = () => {
   const CANVAS_HEIGHT = 600;
 
   // --- Utility Functions ---
+
+
+  // Inside the Whiteboard component
+const handlePaste = (event: ClipboardEvent) => {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.indexOf('image') !== -1) {
+            const blob = item.getAsFile();
+            if (!blob) continue;
+
+            // Prevent default paste behavior (e.g., pasting into a focused text input)
+            event.preventDefault(); 
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const src = e.target?.result as string;
+                if (!src) return;
+
+                // Create an image object to get its dimensions
+                const img = new Image();
+                img.onload = () => {
+                    const id = Date.now();
+                    
+                    // Set dimensions and position 
+                    const imgWidth = img.width > CANVAS_WIDTH / 2 ? CANVAS_WIDTH / 3 : img.width;
+                    const imgHeight = (img.height / img.width) * imgWidth;
+                    
+                    const newImageElement: ImageElement = {
+                        id,
+                        type: 'image',
+                        x: CANVAS_WIDTH / 2 - imgWidth / 2,
+                        y: CANVAS_HEIGHT / 2 - imgHeight / 2,
+                        width: imgWidth,
+                        height: imgHeight,
+                        color: '#000000', 
+                        src: src,
+                    };
+
+                    setElements(prev => [...prev, newImageElement]);
+                    setSelectedElementIds([id]);
+                    setMode('select');
+                };
+                img.src = src;
+            };
+            reader.readAsDataURL(blob);
+            return; 
+        }
+    }
+};
 
   const getMousePos = (event: MouseEvent): { x: number, y: number } => {
     const canvas = canvasRef.current;
@@ -152,7 +209,6 @@ const Whiteboard: React.FC = () => {
     }, []);
 
   // --- Rendering Logic (Called by rAF) ---
-
   const renderElements = useCallback(() => {
     const ctx = getCanvasContext(canvasRef.current);
     if (!ctx) return;
@@ -183,6 +239,17 @@ const Whiteboard: React.FC = () => {
           ctx.font = `${textEl.fontSize}px sans-serif`;
           ctx.fillText(textEl.text, textEl.x, textEl.y);
           break;
+        case 'image':
+          const imageEl = element as ImageElement;
+
+          const imgToDraw = new Image();
+          imgToDraw.onload = () => {
+            ctx.drawImage(imgToDraw, imageEl.x, imageEl.y, imageEl.width, imageEl.height);
+          };
+          imgToDraw.src = imageEl.src;
+
+          ctx.drawImage(imgToDraw, imageEl.x, imageEl.y, imageEl.width, imageEl.height);
+          break;
       }
       
       if (isSelected && mode === 'select' && element.id !== editingTextId) {
@@ -194,6 +261,9 @@ const Whiteboard: React.FC = () => {
          } else if (element.type === 'line') {
              const bbox = getLineBoundingBox(element as LineElement);
              ctx.strokeRect(bbox.x - 5, bbox.y - 5, bbox.w + 10, bbox.h + 10);
+         } else if (element.type === 'image') {
+             const imageEl = element as ImageElement;
+             ctx.strokeRect(imageEl.x - 5, imageEl.y - 5, imageEl.width + 10, imageEl.height + 10);
          }
       }
     });
@@ -223,12 +293,13 @@ const Whiteboard: React.FC = () => {
   }, []);
 
   // --- Event Handlers ---
-
   const handleMouseDown = (event: MouseEvent) => {
     const pos = getMousePos(event);
+    // Clear text editing mode if active
     if (editingTextId !== null) setEditingTextId(null);
 
     if (mode === 'draw') {
+      // Line Drawing Setup
       setIsDrawing(true);
       const newElement: LineElement = {
         id: Date.now(),
@@ -243,12 +314,17 @@ const Whiteboard: React.FC = () => {
     } else if (mode === 'select') {
       let hitElement: WhiteboardElement | undefined;
       
+      // Hit Testing Loop (Iterate backwards to select topmost element)
       for (let i = elements.length - 1; i >= 0; i--) {
           const el = elements[i];
+          
+          // Check for Text Hit
           if (el.type === 'text' && isInsideText(pos.x, pos.y, el as TextElement)) {
               hitElement = el;
               break;
           }
+          
+          // Check for Line Hit (Only checking selected lines for better performance)
           if (el.type === 'line' && selectedElementIds.includes(el.id)) {
               const bbox = getLineBoundingBox(el as LineElement);
               if (pos.x >= bbox.x - 10 && pos.x <= bbox.x + bbox.w + 10 &&
@@ -256,9 +332,19 @@ const Whiteboard: React.FC = () => {
                   hitElement = el; 
                   break;
               }
+          } 
+          
+          // Check for Image Hit
+          if (el.type === 'image') {
+            if (pos.x >= el.x && pos.x <= el.x + el.width &&
+                pos.y >= el.y && pos.y <= el.y + el.height) {
+                hitElement = el;
+                break;
+            }
           }
-      }
+      } 
 
+      //  Movement Setup or Selection Box Start
       if (hitElement) {
           if (!selectedElementIds.includes(hitElement.id)) {
               setSelectedElementIds([hitElement.id]);
@@ -266,6 +352,7 @@ const Whiteboard: React.FC = () => {
           
           setIsMoving(true);
           
+          // Setup the fast path mutable array
           const elementsToMove = elements.filter(el => selectedElementIds.includes(el.id));
           setMovingElements(elementsToMove);
 
@@ -280,7 +367,7 @@ const Whiteboard: React.FC = () => {
           setSelectionRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
       }
     }
-  };
+};
 
   const handleMouseMove = (event: MouseEvent) => {
     const pos = getMousePos(event);
@@ -319,6 +406,9 @@ const Whiteboard: React.FC = () => {
                   p.x += dx;
                   p.y += dy;
               }
+          } else if (el.type === 'image'){
+            el.x += dx;
+            el.y += dy;
           }
       }
 
@@ -483,6 +573,14 @@ const Whiteboard: React.FC = () => {
         );
     };
 
+    useEffect(() => {
+      document.addEventListener('paste', handlePaste);
+
+      return () => {
+        document.removeEventListener('paste', handlePaste);
+      };
+    }, [handlePaste]);
+
   // --- Cursor Mapping ---
   const cursorMap: Record<ToolMode, string> = {
       'select': 'default',
@@ -493,7 +591,7 @@ const Whiteboard: React.FC = () => {
 
   return (
     <div style={{ padding: '20px', backgroundColor: '#f0f0f0', borderRadius: '8px', position: 'relative' }}>
-      <h2>📐 Excalidraw-like Whiteboard (Jitter-Free)</h2>
+      <h2>Whiteboard</h2>
 
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', alignItems: 'center' }}>
@@ -508,7 +606,7 @@ const Whiteboard: React.FC = () => {
             cursor: 'pointer'
           }}
         >
-          Select/Move 👈
+          Select/Move 
         </button>
 
         <button
@@ -521,7 +619,7 @@ const Whiteboard: React.FC = () => {
             cursor: 'pointer'
           }}
         >
-          Draw Line ✍️
+          Draw Line 
         </button>
 
         <button
@@ -532,7 +630,7 @@ const Whiteboard: React.FC = () => {
             border: '1px solid #333'
           }}
         >
-          Add Text 💬
+          Add Text 
         </button>
 
         {/* Color Picker and Clear Button */}
@@ -571,7 +669,6 @@ const Whiteboard: React.FC = () => {
         }}
       />
 
-      {/* The dynamic HTML element layer for text editing */}
       <EditLayer />
     </div>
   );
