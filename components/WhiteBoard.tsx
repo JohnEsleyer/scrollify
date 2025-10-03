@@ -360,6 +360,25 @@ const handlePaste = (event: ClipboardEvent) => {
   }, [elements, renderElements, selectedElementIds, editingTextId, selectionRect, isMoving, isResizing]);
 
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check if the target is an input field (e.g., the EditLayer input)
+      // to prevent deleting elements while typing.
+      const isInput = (event.target as HTMLElement).tagName.toLowerCase() === 'input';
+      if (isInput) return;
+
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault(); // Stop default browser behavior (e.g., navigating back)
+        handleDelete();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleDelete]); 
 
   // --- Event Handlers ---
   const handleMouseDown = (event: MouseEvent) => {
@@ -847,6 +866,20 @@ const handlePaste = (event: ClipboardEvent) => {
         >
           Select/Move/Resize 
         </button>
+        <button
+          onClick={handleDelete} 
+          disabled={selectedElementIds.length === 0}
+          style={{ 
+            padding: '8px 15px', 
+            cursor: selectedElementIds.length > 0 ? 'pointer' : 'not-allowed',
+            backgroundColor: '#ffc107', 
+            color: 'black', 
+            border: 'none', 
+            borderRadius: '4px' 
+          }}
+        >
+          Delete Selected 
+        </button>
 
         <button
           onClick={() => setMode('draw')}
@@ -860,6 +893,7 @@ const handlePaste = (event: ClipboardEvent) => {
         >
           Draw Line 
         </button>
+        
 
         <button
           onClick={handleTextPlacement}
