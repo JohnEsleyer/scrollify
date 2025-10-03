@@ -4,9 +4,12 @@ import React from 'react';
 import { EditorState, LexicalEditor } from 'lexical'; 
 import dynamic from 'next/dynamic';
 import CodeEditorWebview from '@/components/CodeEditorWeview';
-const WhiteBoard = dynamic(() => import('../components/WhiteBoard'), {
-  ssr: false, 
-});
+const WhiteBoard = dynamic(
+  () => import('../components/WhiteBoard/Whiteboard').then((mod) => mod.Whiteboard), 
+  {
+    ssr: false, 
+  }
+);
 
 export default function App() {
     return (
