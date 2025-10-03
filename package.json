@@ -16,6 +16,7 @@
     "@lexical/markdown": "^0.36.2",
     "@lexical/react": "^0.36.2",
     "@lexical/rich-text": "^0.36.2",
+    "@monaco-editor/react": "^4.7.0",
     "@types/prismjs": "^1.26.5",
     "firebase": "^12.3.0",
     "lexical": "^0.36.2",
@@ -25,7 +26,9 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-markdown": "^10.1.0",
-    "react-syntax-highlighter": "^15.6.6"
+    "react-simple-code-editor": "^0.14.1",
+    "react-syntax-highlighter": "^15.6.6",
+    "react-tabs": "^6.1.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
