@@ -35,10 +35,24 @@ type WhiteboardElementType = 'line' | 'text' | 'image';
 // --- State and Mode Definitions ---
 type ToolMode = 'select' | 'draw' | 'text';
 
+// --- Resize Types ---
+type ResizeHandle = 'tl' | 'tr' | 'bl' | 'br'; // Top-Left, Top-Right, Bottom-Left, Bottom-Right
+
 // --- Helper Functions ---
 const getCanvasContext = (canvas: HTMLCanvasElement | null): CanvasRenderingContext2D | null => {
   return canvas ? canvas.getContext('2d') : null;
 };
+
+
+const getLineBoundingBox = (line: LineElement) => {
+      const xs = line.points.map(p => p.x);
+      const ys = line.points.map(p => p.y);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      const maxX = Math.max(...xs);
+      const maxY = Math.max(...ys);
+      return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  };
 
 const isInsideText = (x: number, y: number, textEl: TextElement): boolean => {
     const padding = 5;
@@ -50,6 +64,39 @@ const isInsideText = (x: number, y: number, textEl: TextElement): boolean => {
     );
 };
 
+const getElementBounds = (element: WhiteboardElement): { x: number, y: number, w: number, h: number } => {
+    const padding = 5; // Padding for the selection box
+
+    if (element.type === 'text') {
+        const textEl = element as TextElement;
+        return {
+            x: textEl.x - padding,
+            y: textEl.y - textEl.fontSize - padding,
+            w: textEl.width + 2 * padding,
+            h: textEl.fontSize + 2 * padding,
+        };
+    } else if (element.type === 'line') {
+        const line = element as LineElement;
+        const bbox = getLineBoundingBox(line);
+        return {
+            x: bbox.x - padding,
+            y: bbox.y - padding,
+            w: bbox.w + 2 * padding,
+            h: bbox.h + 2 * padding,
+        };
+    } else if (element.type === 'image') {
+        const imageEl = element as ImageElement;
+        return {
+            x: imageEl.x - padding,
+            y: imageEl.y - padding,
+            w: imageEl.width + 2 * padding,
+            h: imageEl.height + 2 * padding,
+        };
+    }
+    return { x: 0, y: 0, w: 0, h: 0 };
+}
+
+
 const Whiteboard: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [elements, setElements] = useState<WhiteboardElement[]>([]);
@@ -59,6 +106,7 @@ const Whiteboard: React.FC = () => {
   // State for drawing/moving
   const [isDrawing, setIsDrawing] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
+  const [isResizing, setIsResizing] = useState(false); // NEW: Resizing state
   const [selectedElementIds, setSelectedElementIds] = useState<number[]>([]);
   const [offset, setOffset] = useState<{ x: number; y: number } | null>(null); 
 
@@ -70,6 +118,11 @@ const Whiteboard: React.FC = () => {
   const animationFrameRef = useRef<number | null>(null);
   
   const lastPosRef = useRef<{ x: number; y: number } | null>(null); 
+
+  // RESIZING STATES
+  const [resizeStartPos, setResizeStartPos] = useState<{ x: number; y: number } | null>(null); // NEW
+  const [resizeStartElement, setResizeStartElement] = useState<WhiteboardElement | null>(null); // NEW
+  const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null); // NEW
 
   const CANVAS_WIDTH = 1000;
   const CANVAS_HEIGHT = 600;
@@ -148,15 +201,8 @@ const handlePaste = (event: ClipboardEvent) => {
     };
   };
 
-  const getLineBoundingBox = (line: LineElement) => {
-      const xs = line.points.map(p => p.x);
-      const ys = line.points.map(p => p.y);
-      const minX = Math.min(...xs);
-      const minY = Math.min(...ys);
-      const maxX = Math.max(...xs);
-      const maxY = Math.max(...ys);
-      return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-  };
+  
+
   
   const isElementInRect = (el: WhiteboardElement, rect: { x: number; y: number; w: number; h: number }): boolean => {
       const normalizedRect = {
@@ -165,31 +211,17 @@ const handlePaste = (event: ClipboardEvent) => {
           w: Math.abs(rect.w),
           h: Math.abs(rect.h)
       };
+      
+      const bounds = getElementBounds(el);
 
-      if (el.type === 'text') {
-          const textTop = el.y - el.fontSize;
-          const textBottom = el.y;
-          const textLeft = el.x;
-          const textRight = el.x + el.width;
-          
-          return (
-              textLeft < normalizedRect.x + normalizedRect.w &&
-              textRight > normalizedRect.x &&
-              textTop < normalizedRect.y + normalizedRect.h &&
-              textBottom > normalizedRect.y
-          );
-      } else if (el.type === 'line') {
-          const bbox = getLineBoundingBox(el as LineElement);
-          return (
-              bbox.x < normalizedRect.x + normalizedRect.w &&
-              bbox.x + bbox.w > normalizedRect.x &&
-              bbox.y < normalizedRect.y + normalizedRect.h &&
-              bbox.y + bbox.h > normalizedRect.y
-          );
-      }
-      return false;
+      return (
+          bounds.x < normalizedRect.x + normalizedRect.w &&
+          bounds.x + bounds.w > normalizedRect.x &&
+          bounds.y < normalizedRect.y + normalizedRect.h &&
+          bounds.y + bounds.h > normalizedRect.y
+      );
   };
-
+    
   const updateTextElement = useCallback((id: number, newText: string) => {
         const ctx = getCanvasContext(canvasRef.current);
         if (!ctx) return;
@@ -211,7 +243,45 @@ const handlePaste = (event: ClipboardEvent) => {
         );
     }, []);
 
+    const getResizeHandleHit = (x: number, y: number, element: WhiteboardElement): ResizeHandle | null => {
+        if (element.type === 'line') return null; 
+
+        const bounds = getElementBounds(element);
+        const handleSize = 10;
+        const halfSize = handleSize / 2;
+
+        const handles = {
+            tl: { x: bounds.x, y: bounds.y },
+            tr: { x: bounds.x + bounds.w, y: bounds.y },
+            bl: { x: bounds.x, y: bounds.y + bounds.h },
+            br: { x: bounds.x + bounds.w, y: bounds.y + bounds.h },
+        };
+
+        for (const [key, pos] of Object.entries(handles)) {
+            if (
+                x >= pos.x - halfSize && x <= pos.x + halfSize &&
+                y >= pos.y - halfSize && y <= pos.y + halfSize
+            ) {
+                return key as ResizeHandle;
+            }
+        }
+        return null;
+    };
+
+
   // --- Rendering Logic (Called by rAF) ---
+
+  // Helper to draw the resize handle
+  const drawResizeHandle = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
+    const size = 10;
+    const halfSize = size / 2;
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#007bff';
+    ctx.lineWidth = 2;
+    ctx.fillRect(x - halfSize, y - halfSize, size, size);
+    ctx.strokeRect(x - halfSize, y - halfSize, size, size);
+  }
+
   const renderElements = useCallback(() => {
     const ctx = getCanvasContext(canvasRef.current);
     if (!ctx) return;
@@ -237,6 +307,7 @@ const handlePaste = (event: ClipboardEvent) => {
 
         case 'text':
           const textEl = element as TextElement;
+          // Don't draw if currently being edited
           if (textEl.id === editingTextId) return;
 
           ctx.font = `${textEl.fontSize}px sans-serif`;
@@ -246,9 +317,6 @@ const handlePaste = (event: ClipboardEvent) => {
           const imageEl = element as ImageElement;
 
           const imgToDraw = new Image();
-          imgToDraw.onload = () => {
-            ctx.drawImage(imgToDraw, imageEl.x, imageEl.y, imageEl.width, imageEl.height);
-          };
           imgToDraw.src = imageEl.src;
 
           ctx.drawImage(imgToDraw, imageEl.x, imageEl.y, imageEl.width, imageEl.height);
@@ -258,15 +326,18 @@ const handlePaste = (event: ClipboardEvent) => {
       if (isSelected && mode === 'select' && element.id !== editingTextId) {
          ctx.strokeStyle = '#007bff';
          ctx.lineWidth = 2;
-         if (element.type === 'text') {
-             const textEl = element as TextElement;
-             ctx.strokeRect(textEl.x - 5, textEl.y - textEl.fontSize - 5, textEl.width + 10, textEl.height + 10);
-         } else if (element.type === 'line') {
-             const bbox = getLineBoundingBox(element as LineElement);
-             ctx.strokeRect(bbox.x - 5, bbox.y - 5, bbox.w + 10, bbox.h + 10);
-         } else if (element.type === 'image') {
-             const imageEl = element as ImageElement;
-             ctx.strokeRect(imageEl.x - 5, imageEl.y - 5, imageEl.width + 10, imageEl.height + 10);
+         ctx.setLineDash([6, 3]);
+
+         const bounds = getElementBounds(element);
+         ctx.strokeRect(bounds.x, bounds.y, bounds.w, bounds.h);
+         ctx.setLineDash([]);
+         
+         // Draw resize handles for scalable elements
+         if (element.type !== 'line') {
+             drawResizeHandle(ctx, bounds.x, bounds.y); // TL
+             drawResizeHandle(ctx, bounds.x + bounds.w, bounds.y); // TR
+             drawResizeHandle(ctx, bounds.x, bounds.y + bounds.h); // BL
+             drawResizeHandle(ctx, bounds.x + bounds.w, bounds.y + bounds.h); // BR
          }
       }
     });
@@ -281,44 +352,20 @@ const handlePaste = (event: ClipboardEvent) => {
 
   }, [elements, selectedElementIds, mode, editingTextId, selectionRect]);
 
+
   useEffect(() => {
-    if (!isMoving && !selectionRect) {
+    if (!isMoving && !isResizing && !selectionRect) {
         renderElements();
     }
-  }, [elements, renderElements, selectedElementIds, editingTextId, selectionRect, isMoving]);
+  }, [elements, renderElements, selectedElementIds, editingTextId, selectionRect, isMoving, isResizing]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Only trigger if no text is currently being edited
-      if (editingTextId === null) {
-        if (event.key === 'Delete' || event.key === 'Backspace') {
-          event.preventDefault(); 
-          handleDelete();
-        }
-      }
-    };
 
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [handleDelete, editingTextId]);
-
-  useEffect(() => {
-    return () => {
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, []);
 
   // --- Event Handlers ---
   const handleMouseDown = (event: MouseEvent) => {
     const pos = getMousePos(event);
-    const isControlOrCommand = event.ctrlKey || event.metaKey; // Check for Ctrl/Cmd key
+    const isControlOrCommand = event.ctrlKey || event.metaKey; 
 
-    // Clear text editing mode if active
     if (editingTextId !== null) setEditingTextId(null);
 
     if (mode === 'draw') {
@@ -336,17 +383,41 @@ const handlePaste = (event: ClipboardEvent) => {
 
     } else if (mode === 'select') {
       let hitElement: WhiteboardElement | undefined;
+      let hitHandle: ResizeHandle | null = null;
       
+      // Check for Resize Handle Hit first (only on selected elements)
+      for (let i = elements.length - 1; i >= 0; i--) {
+          const el = elements[i];
+          if (selectedElementIds.includes(el.id) && el.type !== 'line') {
+              const handle = getResizeHandleHit(pos.x, pos.y, el);
+              if (handle) {
+                  hitElement = el;
+                  hitHandle = handle;
+                  break;
+              }
+          }
+      }
+
+      // Start Resizing
+      if (hitElement && hitHandle) {
+          setIsResizing(true);
+          setResizeHandle(hitHandle);
+          setResizeStartPos(pos);
+          // Store a copy of the element's state before resizing starts
+          setResizeStartElement({...hitElement}); 
+          setSelectedElementIds([hitElement.id]); // Single select for resizing
+          return;
+      }
+
+
+      // Check for Element Hit (if no resize handle hit)
       for (let i = elements.length - 1; i >= 0; i--) {
           const el = elements[i];
           
-          // Check for Text Hit
           if (el.type === 'text' && isInsideText(pos.x, pos.y, el as TextElement)) {
               hitElement = el;
               break;
           }
-          
-          // Check for Line Hit (Only checking selected lines for better performance)
           if (el.type === 'line' && selectedElementIds.includes(el.id)) {
               const bbox = getLineBoundingBox(el as LineElement);
               if (pos.x >= bbox.x - 10 && pos.x <= bbox.x + bbox.w + 10 &&
@@ -355,8 +426,6 @@ const handlePaste = (event: ClipboardEvent) => {
                   break;
               }
           } 
-          
-          // Check for Image Hit
           if (el.type === 'image') {
             if (pos.x >= el.x && pos.x <= el.x + el.width &&
                 pos.y >= el.y && pos.y <= el.y + el.height) {
@@ -366,38 +435,30 @@ const handlePaste = (event: ClipboardEvent) => {
           }
       } 
 
-      //  Movement Setup or Selection Box Start
+      // Movement Setup or Selection Box Start
       if (hitElement) {
           
           let currentSelectedIds = selectedElementIds;
 
           if (isControlOrCommand) {
-              // --- Multi-Selection Logic (Ctrl/Cmd pressed) ---
               if (selectedElementIds.includes(hitElement.id)) {
-                  // Deselect
                   currentSelectedIds = selectedElementIds.filter(id => id !== hitElement.id);
               } else {
-                  // Add to selection
                   currentSelectedIds = [...selectedElementIds, hitElement.id];
               }
           } else if (!selectedElementIds.includes(hitElement.id)) {
-              // Single Selection (Ctrl/Cmd not pressed and element not selected)
               currentSelectedIds = [hitElement.id];
           }
 
           setSelectedElementIds(currentSelectedIds);
           
-          // Start moving all currently selected elements
           if (currentSelectedIds.length > 0) {
               setIsMoving(true);
-              
-              // Setup the fast path mutable array
               const elementsToMove = elements.filter(el => currentSelectedIds.includes(el.id));
               setMovingElements(elementsToMove);
 
               lastPosRef.current = pos; 
         
-              // Use the first selected element for offset calculation (for single-element selection feel)
               const firstSelectedEl = elementsToMove[0]; 
               if (firstSelectedEl) {
                   const startX = firstSelectedEl.type === 'line' ? firstSelectedEl.points[0].x : firstSelectedEl.x;
@@ -405,7 +466,6 @@ const handlePaste = (event: ClipboardEvent) => {
                   setOffset({ x: pos.x - startX, y: pos.y - startY });
               }
           } else {
-              // If deselecting the last element with Ctrl/Cmd, start a selection box
               setSelectionRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
           }
 
@@ -446,7 +506,7 @@ const handlePaste = (event: ClipboardEvent) => {
       const dy = pos.y - lastPosRef.current.y;
 
       for (const el of movingElements) {
-          if (el.type === 'text') {
+          if (el.type === 'text' || el.type === 'image') {
               el.x += dx;
               el.y += dy;
           } else if (el.type === 'line') {
@@ -454,9 +514,6 @@ const handlePaste = (event: ClipboardEvent) => {
                   p.x += dx;
                   p.y += dy;
               }
-          } else if (el.type === 'image'){
-            el.x += dx;
-            el.y += dy;
           }
       }
 
@@ -469,6 +526,103 @@ const handlePaste = (event: ClipboardEvent) => {
           renderElements();
           animationFrameRef.current = null;
       });
+
+    } else if (isResizing && resizeStartElement && resizeStartPos && resizeHandle) { 
+        const startEl = resizeStartElement; 
+
+        const dx = pos.x - resizeStartPos.x;
+        const dy = pos.y - resizeStartPos.y;
+        
+        let newX = resizeStartElement.x;
+        let newY = resizeStartElement.y;
+        let newWidth = resizeStartElement.width;
+        let newHeight = resizeStartElement.height;
+
+        const isImage = startEl.type === 'image';
+        const aspectRatio = isImage && startEl.height > 0 ? startEl.width / startEl.height : 1;
+        
+        // Scaling logic based on handle
+        switch (resizeHandle) {
+            case 'br':
+                newWidth = Math.max(10, startEl.width + dx);
+                newHeight = isImage ? newWidth / aspectRatio : Math.max(10, resizeStartElement.height + dy);                break;
+            case 'bl':
+                newX = resizeStartElement.x + dx;
+                newWidth = Math.max(10, startEl.width - dx);
+                if (isImage) {
+                    newHeight = newWidth / aspectRatio;
+                    // Move Y to keep the bottom fixed
+                    newY = resizeStartElement.y + (resizeStartElement.height - newHeight);
+                } else {
+                    // Only adjust X and Width for non-image elements on BL
+                }
+                break;
+            case 'tr':
+                newY = startEl.y + dy;
+                newWidth = Math.max(10, resizeStartElement.width + dx);
+                if (isImage) {
+                    newHeight = newWidth / aspectRatio;
+               
+                    newY = resizeStartElement.y + dy; 
+                    newWidth = Math.max(10, resizeStartElement.width + dx);
+                    newHeight = newWidth / aspectRatio;
+             
+                    newY = startEl.y + (startEl.height - newHeight);
+                } else {
+                    newHeight = Math.max(10, resizeStartElement.height - dy);
+                    newY = resizeStartElement.y + dy;
+                }
+                break;
+            case 'tl':
+                newX = startEl.x + dx;
+                newY = startEl.y + dy;
+                newWidth = Math.max(10, startEl.width - dx);
+                
+                if (isImage) {
+                    newHeight = newWidth / aspectRatio;
+     
+                } else {
+                    newHeight = Math.max(10, startEl.height - dy);
+                }
+                break;
+        }
+
+        setElements(prevElements => 
+            prevElements.map(el => {
+                if (el.id === resizeStartElement.id) {
+                    const updatedElement: WhiteboardElement = {
+                        ...el,
+                        x: newX,
+                        y: newY,
+                        width: newWidth,
+                        height: newHeight,
+                    };
+
+                    if (updatedElement.type === 'text') {
+                        const newFontSize = Math.floor(newHeight / 1.2); 
+                        (updatedElement as TextElement).fontSize = Math.max(8, newFontSize); 
+                        const ctx = getCanvasContext(canvasRef.current);
+                        if (ctx) {
+                             ctx.font = `${(updatedElement as TextElement).fontSize}px sans-serif`;
+                             const textMetrics = ctx.measureText((updatedElement as TextElement).text);
+                             updatedElement.width = textMetrics.width;
+                        }
+                    }
+                    return updatedElement;
+                }
+                return el;
+            })
+        );
+        
+        // Use rAF for smooth rendering
+        if (animationFrameRef.current !== null) {
+            cancelAnimationFrame(animationFrameRef.current);
+        }
+        animationFrameRef.current = requestAnimationFrame(() => {
+            renderElements();
+            animationFrameRef.current = null;
+        });
+
 
     } else if (selectionRect && mode === 'select') {
         setSelectionRect(prevRect => {
@@ -487,6 +641,25 @@ const handlePaste = (event: ClipboardEvent) => {
             renderElements();
             animationFrameRef.current = null;
         });
+    } else if (mode === 'select' && !isMoving && !isResizing && !selectionRect) {
+
+        const elementUnderCursor = elements.slice().reverse().find(el => {
+            return selectedElementIds.includes(el.id) && el.type !== 'line' && getResizeHandleHit(pos.x, pos.y, el);
+        });
+
+        const canvas = canvasRef.current;
+        if (canvas) {
+            if (elementUnderCursor) {
+                const handle = getResizeHandleHit(pos.x, pos.y, elementUnderCursor);
+                if (handle === 'tl' || handle === 'br') {
+                    canvas.style.cursor = 'nwse-resize';
+                } else if (handle === 'tr' || handle === 'bl') {
+                    canvas.style.cursor = 'nesw-resize';
+                }
+            } else {
+                canvas.style.cursor = cursorMap[mode];
+            }
+        }
     }
   };
 
@@ -499,12 +672,21 @@ const handlePaste = (event: ClipboardEvent) => {
 
     setIsDrawing(false);
     setIsMoving(false);
+    setIsResizing(false);
     setOffset(null);
+    setResizeHandle(null);
+    setResizeStartElement(null);
+    setResizeStartPos(null);
     
     lastPosRef.current = null; 
 
     if (movingElements.length > 0) {
-        setElements(prevElements => [...prevElements]);
+        setElements(prevElements => 
+            prevElements.map(el => {
+                const movedEl = movingElements.find(mEl => mEl.id === el.id);
+                return movedEl ? movedEl : el;
+            })
+        );
         setMovingElements([]);
     }
 
@@ -636,11 +818,11 @@ const handlePaste = (event: ClipboardEvent) => {
       return () => {
         document.removeEventListener('paste', handlePaste);
       };
-    }, [handlePaste]);
+    }, []); 
 
-  // --- Cursor Mapping ---
+
   const cursorMap: Record<ToolMode, string> = {
-      'select': 'default',
+      'select': 'default', 
       'draw': 'crosshair',
       'text': 'default',
   };
@@ -663,7 +845,7 @@ const handlePaste = (event: ClipboardEvent) => {
             cursor: 'pointer'
           }}
         >
-          Select/Move 
+          Select/Move/Resize 
         </button>
 
         <button
@@ -705,7 +887,7 @@ const handlePaste = (event: ClipboardEvent) => {
           onClick={() => setElements([])}
           style={{ padding: '8px 15px', cursor: 'pointer', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '4px' }}
         >
-          Clear All
+          Clear All 
         </button>
       </div>
 
@@ -722,7 +904,8 @@ const handlePaste = (event: ClipboardEvent) => {
         style={{
           border: '2px solid #333',
           backgroundColor: 'white',
-          cursor: cursorMap[mode]
+    
+          cursor: cursorMap[mode] 
         }}
       />
 
