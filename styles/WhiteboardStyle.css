@@ -1,0 +1,51 @@
+/*
+  The outermost wrapper for general padding/background, as in your original style
+*/
+.whiteboard-wrapper {
+  padding: 20px;
+  background-color: #f0f0f0;
+  border-radius: 8px;
+  position: relative;
+  /* Use 100% width to allow it to shrink */
+  width: 100%; 
+  box-sizing: border-box;
+}
+
+/* 1. The Container: This dictates the *physical* space the canvas takes up. 
+  It shrinks/grows responsively.
+*/
+.canvas-container {
+  /* Take up the maximum available space, which makes it responsive */
+  width: 100%; 
+  
+  /* IMPORTANT: Set the maximum width to your internal drawing width */
+  max-width: 1000px; 
+  
+  /* IMPORTANT: Maintain the original aspect ratio (1000 / 600) as the container shrinks */
+  aspect-ratio: 1000 / 600; 
+  
+  position: relative; /* Needed for the floating EditLayer */
+  border: 2px solid #333; /* Border is now on the container */
+  background-color: white;
+  margin: 0 auto; /* Center the canvas */
+}
+
+/* 2. The Canvas: This is the fixed 1000x600 drawing surface. 
+  It is scaled down *visually* using the CSS transform calculated by JavaScript.
+*/
+.whiteboard-canvas {
+  /* IMPORTANT: The CSS width/height must match the internal canvas width/height */
+  width: 1000px;
+  height: 600px;
+  
+  /* Apply the scale factor. --scale-factor is set by your useEffect hook */
+  transform: scale(var(--scale-factor));
+  
+  /* Ensure scaling is done from the top-left corner */
+  transform-origin: top left;
+  
+  /* Prevent the canvas itself from taking up scaled space */
+  position: absolute; 
+  top: 0;
+  left: 0;
+}

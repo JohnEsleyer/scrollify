@@ -1,5 +1,3 @@
-// src/components/Whiteboard.tsx
-
 import React, { useRef, useState, useEffect, useCallback, MouseEvent } from 'react';
 import { 
     WhiteboardElement, 
@@ -20,13 +18,26 @@ import {
     drawResizeHandle 
 } from './WhiteboardElementUtils';
 import { EditLayer } from './EditLayer';
-
+import '@/styles/WhiteboardStyle.css';
+import { useOrientation } from '@/hooks/useOrientation';
 
 const CANVAS_WIDTH = 1000;
 const CANVAS_HEIGHT = 600;
 
+const INTERNAL_WIDTH = 1000;
+const INTERNAL_HEIGHT = 600;
+
 export const Whiteboard: React.FC = () => {
+
+  const orientation = useOrientation();
+  const isReadOnly = orientation === 'portrait';
+  
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 }); // Current canvas translation
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = useRef<{ x: number; y: number } | null>(null);
+
   const [elements, setElements] = useState<WhiteboardElement[]>([]);
   const [mode, setMode] = useState<ToolMode>('draw');
   const [color, setColor] = useState<string>('#000000');
@@ -56,12 +67,18 @@ export const Whiteboard: React.FC = () => {
   const getMousePos = (event: MouseEvent): { x: number, y: number } => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
+    
     const rect = canvas.getBoundingClientRect();
+    const scaleFactor = rect.width / INTERNAL_WIDTH; 
+
+    // When calculating position for element interaction, we need to subtract the pan offset.
     return {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
+      x: (event.clientX - rect.left) / scaleFactor - panOffset.x, // Adjust for panning
+      y: (event.clientY - rect.top) / scaleFactor - panOffset.y, // Adjust for panning
     };
   };
+
+
 
   const updateTextElement = useCallback((id: number, newText: string) => {
         const ctx = getCanvasContext(canvasRef.current);
@@ -150,9 +167,15 @@ export const Whiteboard: React.FC = () => {
     const ctx = getCanvasContext(canvasRef.current);
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.clearRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
+    
+    // 1. Apply Pan Translation
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
 
+    // 2. Draw Elements (drawing logic remains the same)
     elements.forEach(element => {
+      // ... (drawing switch case remains the same) ...
       ctx.strokeStyle = element.color;
       ctx.fillStyle = element.color;
       const isSelected = selectedElementIds.includes(element.id);
@@ -181,14 +204,12 @@ export const Whiteboard: React.FC = () => {
 
           const imgToDraw = new Image();
           imgToDraw.src = imageEl.src;
-
-          // Note: drawImage needs to be handled carefully in a loop like this for production.
-          // For simplicity here, we assume the image is in memory or handles loading quickly.
           ctx.drawImage(imgToDraw, imageEl.x, imageEl.y, imageEl.width, imageEl.height);
           break;
       }
       
-      if (isSelected && mode === 'select' && element.id !== editingTextId) {
+      // Draw selection/resize handles only in interactive mode
+      if (!isReadOnly && isSelected && mode === 'select' && element.id !== editingTextId) {
          ctx.strokeStyle = '#007bff';
          ctx.lineWidth = 2;
          ctx.setLineDash([6, 3]);
@@ -213,8 +234,11 @@ export const Whiteboard: React.FC = () => {
         ctx.strokeRect(selectionRect.x, selectionRect.y, selectionRect.w, selectionRect.h);
         ctx.setLineDash([]);
     }
+    
+    // 3. Restore context (remove translation)
+    ctx.restore();
 
-  }, [elements, selectedElementIds, mode, editingTextId, selectionRect]);
+  }, [elements, selectedElementIds, mode, editingTextId, selectionRect, panOffset, isReadOnly]); 
 
 
   useEffect(() => {
@@ -225,7 +249,6 @@ export const Whiteboard: React.FC = () => {
   }, [elements, renderElements, selectedElementIds, editingTextId, selectionRect, isMoving, isResizing]);
 
   // --- Keyboard & Paste Effects ---
-
   useEffect(() => {
       document.addEventListener('paste', handlePaste);
       const handleKeyDown = (event: KeyboardEvent) => {
@@ -246,8 +269,37 @@ export const Whiteboard: React.FC = () => {
       };
   }, [handleDelete]); 
 
+  useEffect(() => {
+    const calculateScale = () => {
+        const canvasContainer = canvasRef.current?.parentElement;
+        if (!canvasContainer) return;
+
+        // Get the actual width of the container on the screen
+        const containerWidth = canvasContainer.clientWidth; 
+        
+        // Calculate the scale factor (e.g., 500px / 1000px = 0.5)
+        const scaleFactor = containerWidth / INTERNAL_WIDTH;
+
+        // Apply the scale factor to the container via CSS variable
+        canvasContainer.style.setProperty('--scale-factor', scaleFactor.toFixed(4));
+    };
+
+    calculateScale();
+      window.addEventListener('resize', calculateScale);
+
+      return () => window.removeEventListener('resize', calculateScale);
+  }, []);
+
+
   // --- Event Handlers (trimmed for brevity, focusing on React-specific implementation) ---
-  const handleMouseDown = (event: MouseEvent) => {
+  const handleMouseDown = (event: MouseEvent) => {    
+    if (isReadOnly) {
+        setIsPanning(true);
+        // Store the raw mouse client coordinates for calculating the delta
+        panStartRef.current = { x: event.clientX, y: event.clientY }; 
+        return; 
+    }
+    
     const pos = getMousePos(event);
     const isControlOrCommand = event.ctrlKey || event.metaKey; 
 
@@ -350,6 +402,36 @@ export const Whiteboard: React.FC = () => {
   };
 
   const handleMouseMove = (event: MouseEvent) => {
+
+    if (isPanning) {
+        if (!panStartRef.current) return;
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const scaleFactor = rect.width / INTERNAL_WIDTH;
+
+        // Calculate delta in internal whiteboard units (1000x600)
+        const dx = (event.clientX - panStartRef.current.x) / scaleFactor;
+        const dy = (event.clientY - panStartRef.current.y) / scaleFactor;
+
+        setPanOffset(prev => ({
+            x: prev.x + dx,
+            y: prev.y + dy,
+        }));
+        
+        // Update pan start position for next move event
+        panStartRef.current = { x: event.clientX, y: event.clientY }; 
+
+        // Rerender via rAF for smooth panning
+        if (animationFrameRef.current !== null) { cancelAnimationFrame(animationFrameRef.current); }
+        animationFrameRef.current = requestAnimationFrame(renderElements);
+        return;
+    }
+
+    if (isReadOnly) return;
+
     const pos = getMousePos(event);
 
     if (isDrawing && mode === 'draw') {
@@ -510,42 +592,49 @@ export const Whiteboard: React.FC = () => {
       animationFrameRef.current = null;
     }
 
-    setIsDrawing(false);
-    setIsMoving(false);
-    setIsResizing(false);
-    setOffset(null);
-    setResizeHandle(null);
-    setResizeStartElement(null);
-    setResizeStartPos(null);
-    lastPosRef.current = null; 
+    setIsPanning(false);
+    panStartRef.current = null;
+    
+    if (!isReadOnly){
+      setIsDrawing(false);
+      setIsMoving(false);
+      setIsResizing(false);
+      setOffset(null);
+      setResizeHandle(null);
+      setResizeStartElement(null);
+      setResizeStartPos(null);
+      lastPosRef.current = null; 
 
-    if (movingElements.length > 0) {
-        setElements(prevElements => 
-            prevElements.map(el => {
-                const movedEl = movingElements.find(mEl => mEl.id === el.id);
-                return movedEl ? movedEl : el;
-            })
-        );
-        setMovingElements([]);
-    }
+      if (movingElements.length > 0) {
+          setElements(prevElements => 
+              prevElements.map(el => {
+                  const movedEl = movingElements.find(mEl => mEl.id === el.id);
+                  return movedEl ? movedEl : el;
+              })
+          );
+          setMovingElements([]);
+      }
 
-    if (selectionRect) {
-        const newlySelectedIds = elements
-            .filter(el => isElementInRect(el, selectionRect))
-            .map(el => el.id);
+      if (selectionRect) {
+          const newlySelectedIds = elements
+              .filter(el => isElementInRect(el, selectionRect))
+              .map(el => el.id);
 
-        setSelectedElementIds(newlySelectedIds);
-        setSelectionRect(null);
+          setSelectedElementIds(newlySelectedIds);
+          setSelectionRect(null);
 
-        if (newlySelectedIds.length === 0) {
-            setMode('select');
-        }
+          if (newlySelectedIds.length === 0) {
+              setMode('select');
+          }
 
-        setElements(prev => [...prev]);
-    }
+          setElements(prev => [...prev]);
+      }
+      }
   };
 
   const handleDoubleClick = (event: MouseEvent) => {
+      if (isReadOnly) return;
+
       const pos = getMousePos(event);
       if (mode === 'select') {
           for (let i = elements.length - 1; i >= 0; i--) {
@@ -587,7 +676,7 @@ export const Whiteboard: React.FC = () => {
   };
 
   const cursorMap: Record<ToolMode, string> = {
-      'select': 'default', 
+      'select': isReadOnly ? 'grab' : 'default',
       'draw': 'crosshair',
       'text': 'default',
   };
@@ -595,24 +684,18 @@ export const Whiteboard: React.FC = () => {
   const editingElement = elements.find(el => el.id === editingTextId);
 
   return (
-    <div style={{ padding: '20px', backgroundColor: '#f0f0f0', borderRadius: '8px', position: 'relative' }}>
+    <div className='whiteboard-wrapper'>
       <h2>Whiteboard</h2>
 
-      {/* Toolbar */}
-      <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', alignItems: 'center' }}>
-
-        <button
-          onClick={() => setMode('select')}
-          style={{
-            backgroundColor: mode === 'select' ? '#007bff' : '#fff',
-            color: mode === 'select' ? 'white' : 'black',
-            border: '1px solid #007bff',
-            padding: '8px 15px',
-            cursor: 'pointer'
-          }}
-        >
-          Select/Move/Resize 
-        </button>
+       {!isReadOnly && (
+        <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', alignItems: 'center' }}>
+          {/* ... (Your full Toolbar content) ... */}
+            <h2>Whiteboard (Landscape: Editing)</h2>
+            <button
+                onClick={() => setMode('select')}
+                style={{ backgroundColor: mode === 'select' ? '#007bff' : '#fff', color: mode === 'select' ? 'white' : 'black', border: '1px solid #007bff', padding: '8px 15px', cursor: 'pointer' }}>
+                Select/Move/Resize 
+            </button>
 
         <button
           onClick={() => setMode('draw')}
@@ -651,7 +734,7 @@ export const Whiteboard: React.FC = () => {
             borderRadius: '4px' 
           }}
         >
-          Delete Selected 🗑️
+          Delete Selected 
         </button>
         
         {/* Color Picker and Clear Button */}
@@ -671,26 +754,35 @@ export const Whiteboard: React.FC = () => {
         >
           Clear All 
         </button>
-      </div>
+        </div>
+      )}
+      
+      {isReadOnly && (
+          <h2>Whiteboard (Portrait: Read-Only & Pan)</h2>
+      )}
+
+
 
       {/* Canvas */}
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onDoubleClick={handleDoubleClick}
-        style={{
-          border: '2px solid #333',
-          backgroundColor: 'white',
-          cursor: cursorMap[mode] 
-        }}
-      />
+     <div className="canvas-container">
+          <canvas
+            ref={canvasRef}
+            width={INTERNAL_WIDTH}
+            height={INTERNAL_HEIGHT}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onDoubleClick={handleDoubleClick}
+            className="whiteboard-canvas"
+            style={{ 
+                cursor: isPanning ? 'grabbing' : cursorMap[mode] 
+            }}
+          />
+      </div>
 
-      {editingTextId !== null && editingElement && editingElement.type === 'text' && (
+      {/* EditLayer is only active in interactive mode */}
+      {!isReadOnly && editingTextId !== null && editingElement && editingElement.type === 'text' && (
           <EditLayer 
             element={editingElement as TextElement}
             canvasRef={canvasRef as React.RefObject<HTMLCanvasElement | null>}
