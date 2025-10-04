@@ -33,8 +33,7 @@ export type WhiteboardElementType = 'line' | 'text' | 'image';
 export type ToolMode = 'select' | 'draw' | 'text';
 
 // Resize Types
-export type ResizeHandle = 'tl' | 'tr' | 'bl' | 'br'; // Top-Left, Top-Right, Bottom-Left, Bottom-Right
-
+export type ResizeHandle = 'tl' | 'tr' | 'bl' | 'br';
 export interface SelectionRect {
     x: number; 
     y: number; 

@@ -34,7 +34,7 @@ export const isInsideText = (x: number, y: number, textEl: TextElement): boolean
 };
 
 export const getElementBounds = (element: WhiteboardElement): { x: number, y: number, w: number, h: number } => {
-    const padding = 5; // Padding for the selection box
+    const padding = 5; 
 
     if (element.type === 'text') {
         const textEl = element as TextElement;
@@ -108,7 +108,6 @@ export const isElementInRect = (el: WhiteboardElement, rect: SelectionRect): boo
     );
 };
 
-// Helper to draw the resize handle
 export const drawResizeHandle = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
   const size = 10;
   const halfSize = size / 2;

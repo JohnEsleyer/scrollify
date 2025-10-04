@@ -77,7 +77,6 @@ export const EditLayer: React.FC<EditLayerProps> = ({
             value={localText}
             onChange={(e) => {
                 setLocalText(e.target.value);
-                // Real-time canvas update (optional, but good for preview)
                 updateTextElement(element.id, e.target.value); 
             }}
             onBlur={handleBlur}

@@ -73,8 +73,8 @@ export const Whiteboard: React.FC = () => {
 
     // When calculating position for element interaction, we need to subtract the pan offset.
     return {
-      x: (event.clientX - rect.left) / scaleFactor - panOffset.x, // Adjust for panning
-      y: (event.clientY - rect.top) / scaleFactor - panOffset.y, // Adjust for panning
+      x: (event.clientX - rect.left) / scaleFactor - panOffset.x,
+      y: (event.clientY - rect.top) / scaleFactor - panOffset.y, 
     };
   };
 
@@ -169,13 +169,12 @@ export const Whiteboard: React.FC = () => {
 
     ctx.clearRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
     
-    // 1. Apply Pan Translation
+    // Apply Pan Translation
     ctx.save();
     ctx.translate(panOffset.x, panOffset.y);
 
-    // 2. Draw Elements (drawing logic remains the same)
+    // Draw Elements (drawing logic remains the same)
     elements.forEach(element => {
-      // ... (drawing switch case remains the same) ...
       ctx.strokeStyle = element.color;
       ctx.fillStyle = element.color;
       const isSelected = selectedElementIds.includes(element.id);
@@ -235,7 +234,7 @@ export const Whiteboard: React.FC = () => {
         ctx.setLineDash([]);
     }
     
-    // 3. Restore context (remove translation)
+    // Restore context (remove translation)
     ctx.restore();
 
   }, [elements, selectedElementIds, mode, editingTextId, selectionRect, panOffset, isReadOnly]); 
@@ -564,7 +563,6 @@ export const Whiteboard: React.FC = () => {
         animationFrameRef.current = requestAnimationFrame(() => { renderElements(); animationFrameRef.current = null; });
     
     } else if (mode === 'select' && !isMoving && !isResizing && !selectionRect) {
-        // Cursor change logic
         const elementUnderCursor = elements.slice().reverse().find(el => {
             return selectedElementIds.includes(el.id) && el.type !== 'line' && getResizeHandleHit(pos.x, pos.y, el);
         });
@@ -689,7 +687,7 @@ export const Whiteboard: React.FC = () => {
 
        {!isReadOnly && (
         <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', alignItems: 'center' }}>
-          {/* ... (Your full Toolbar content) ... */}
+    
             <h2>Whiteboard (Landscape: Editing)</h2>
             <button
                 onClick={() => setMode('select')}

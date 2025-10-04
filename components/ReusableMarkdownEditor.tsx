@@ -34,17 +34,38 @@ const ALL_TRANSFORMERS: Transformer[] = [
     CODE_TRANSFORMER,
 ];
 
+const EMPTY_EDITOR_STATE = '{"root":{"children":[{"children":[],"direction":"ltr","format":"","indent":0,"type":"paragraph","version":1}],"direction":"ltr","format":"","indent":0,"type":"root","version":1}}';
+
+const isValidJsonString = (str: string): boolean => {
+    if (!str || typeof str !== 'string' || str.trim().length === 0) {
+        return false;
+    }
+    // Check if it looks like a Lexical-style object start
+    return str.trim().startsWith('{');
+};
 
 const createInitialEditorState = (content?: string) => (editor: LexicalEditor) => {
-    if (content) {
-        try {
-            const editorState = editor.parseEditorState(content);
+   let contentToParse = EMPTY_EDITOR_STATE;
+
+    if (content && isValidJsonString(content)) {
+        contentToParse = content;
+    } else if (content) {
+        // Log a warning if content exists but is invalid, and use the empty state
+        console.warn("Invalid content structure received. Using EMPTY_EDITOR_STATE. Received:", content);
+    }
+
+    try {
+            // Now 'contentToParse' is guaranteed to be a string and likely valid JSON structure
+            const editorState = editor.parseEditorState(contentToParse); 
             editor.setEditorState(editorState);
         } catch (e) {
-            console.error("Could not parse initial content JSON:", e);
+            console.error("Critical: Could not parse final content string. This should not happen.", e);
+            
+            // As a final, final fallback, set the empty state directly
+            editor.setEditorState(editor.parseEditorState(EMPTY_EDITOR_STATE));
         }
-    }
 };
+
 
 
 interface StateChangeReporterProps {
