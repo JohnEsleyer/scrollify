@@ -1,17 +1,14 @@
-// components/NoteView.tsx
+
 import React, { useState, useEffect } from 'react';
 import { SidebarWrapper } from './SidebarWrapper';
 import ReusableMarkdownEditor from './ReusableMarkdownEditor';
 import CodeEditorWebview from './CodeEditorWebview';
 import { Whiteboard } from './whiteboard/Whiteboard';
 import { SidebarItem, Note, NoteType } from '@/lib/types';
-import { NoteTypeSelector } from './NoteTypeSelector'; // 💡 Import Selector
+import { NoteTypeSelector } from './NoteTypeSelector'; 
 
-// 💡 Import Firebase
 import { db } from '@/lib/firebase'; 
 import { doc, getDoc, updateDoc, Timestamp, DocumentSnapshot } from 'firebase/firestore'; 
-
-
 
 interface CanvasComponentProps {
     initialData: string;
@@ -20,7 +17,7 @@ interface CanvasComponentProps {
 
 const CanvasComponent: React.FC<CanvasComponentProps> = ({ initialData }) => (
   <div className="flex justify-center items-center h-full text-2xl text-gray-500">
-    🎨 Canvas Editor/Viewer Placeholder (Data: {initialData.length > 20 ? initialData.substring(0, 20) + '...' : initialData})
+    Canvas Editor/Viewer Placeholder (Data: {initialData.length > 20 ? initialData.substring(0, 20) + '...' : initialData})
   </div>
 );
 
@@ -37,9 +34,7 @@ const getInitialContent = (type: NoteType): string => {
     }
 };
 
-// --- MOCK SIDEBAR ITEMS (Initial State - remains the same) ---
 const initialSidebarItems: SidebarItem[] = [
-  // ... (references, attachments, sketchpad items) ...
   { id: 'references', label: 'References (Markdown)', component: <ReusableMarkdownEditor content='{"root":{"children":[{"children":[{"detail":0,"format":0,"mode":"normal","text":"Reference details...","type":"text","version":1}],"direction":"ltr","format":"","indent":0,"type":"paragraph","version":1}],"direction":"ltr","format":"","indent":0,"type":"root","version":1}}'/> },
   { id: 'attachments', label: 'Attachments (Webview)', component: <CodeEditorWebview /> },
   { id: 'sketchpad', label: 'Sketchpad (WhiteBoard)', component: <Whiteboard /> },
@@ -55,12 +50,10 @@ interface NoteViewProps {
 const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
   const [sidebarItems, setSidebarItems] = useState<SidebarItem[]>(initialSidebarItems);
   
-  // 💡 NEW States
-  const [noteData, setNoteData] = useState<Note | null>(null);
+const [noteData, setNoteData] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
   const [showTypeSelector, setShowTypeSelector] = useState(false);
 
-  // --- 1. Fetch Note Data from Firestore ---
   useEffect(() => {
     if (!noteId) return;
 
@@ -71,6 +64,11 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
 
       if (docSnap.exists()) {
         const data = docSnap.data();
+        const INITIAL_EMPTY_CONTENT = '{"root":{"children":[],"direction":"ltr","format":"","indent":0,"type":"root","version":1}}';
+
+        const isUninitializedDefaultNote = 
+          data.noteType === 'markdown' && 
+          data.content === INITIAL_EMPTY_CONTENT;
         
         // Check if the note is initialized (has a content field)
         const isInitialized = data.content !== undefined && data.content !== null;
@@ -82,16 +80,20 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
             createdAt: (data.createdAt as Timestamp)?.toMillis() || Date.now(),
             updatedAt: (data.updatedAt as Timestamp)?.toMillis() || Date.now(),
             type: 'note',
-            noteType: data.noteType || 'markdown', // Default to markdown if missing
+            noteType: data.noteType || 'markdown', 
             content: data.content || '',
             preview: data.preview || '',
-        } as Note); // Cast to Note type
+        } as Note); 
         
         setLoading(false);
         
         // Show the selector if content is empty (uninitialized)
-        if (!isInitialized) {
-            setShowTypeSelector(true);
+        if (isUninitializedDefaultNote) {
+          setShowTypeSelector(true);
+        } else {
+            // If the content is an empty string but the noteType has been set (e.g., webview), 
+            // we assume it was initialized and then cleared, so we don't show the selector.
+            setShowTypeSelector(false); 
         }
       } else {
         // Should not happen if Navigator is working correctly, but good for error handling
@@ -104,8 +106,6 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
     fetchNote();
   }, [noteId]);
 
-
-  // --- 2. Handler for Note Type Selection (Saves to Firestore) ---
   const handleSelectNoteType = async (type: NoteType) => {
     if (!noteData) return;
     
@@ -129,40 +129,61 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
     }
   };
 
-
-  // --- 3. Renderers and Sidebar Logic (CRUD handlers remain the same) ---
   
-  // Sidebar CRUD Handlers (remain the same as previous step)
+  // Sidebar CRUD Handlers
   const handleCreateSideNote = () => {/* ... */};
   const handleUpdateSideNote = (id: string, newLabel: string) => {/* ... */};
   const handleDeleteSideNote = (id: string) => {/* ... */};
   
   // Render the appropriate editor/viewer
+ const handleContentChange = React.useCallback(async (newContentJson: string) => {
+    if (!noteId) return;
+    
+    setNoteData(prev => prev ? { ...prev, content: newContentJson, updatedAt: Date.now() } : null);
+    
+    try {
+        const noteRef = doc(db, 'entities', noteId);
+        
+        await updateDoc(noteRef, {
+            content: newContentJson,
+            updatedAt: Timestamp.now(),
+        });
+        
+        console.log(`[Firestore] Successfully saved content for note: ${noteId}`);
+        
+    } catch (error) {
+        console.error("Failed to save note content:", error);
+    }
+  }, [noteId]);
+
+  // --- 3. Renderers and Sidebar Logic ---
+  
+  // Render the appropriate editor/viewer
   const renderNoteContent = () => {
     if (!noteData) return null;
     
-
-    const handleContentChange = (newContentJson: string) => {
-        console.log("Note content changed:", newContentJson);
-        // TODO: Implement actual Firestore updateDoc here, likely debounced
-    };
-
+    // The handleContentChange function is now defined at the top level, 
+    // so it doesn't violate the rules when used here.
+    
     switch (noteData.noteType) {
       case 'markdown':
-            console.log("Content being passed to editor:", noteData.content);
-        // Assuming your ReusableMarkdownEditor has an onChange for saving
-          return (
+         return (
             <ReusableMarkdownEditor 
-                key={noteData.id} // <--- ADD THIS LINE
+                key={noteData.id}
                 content={noteData.content} 
                 onChange={handleContentChange} 
             />
         );
       case 'webview':
-        // Assuming CodeEditorWebview takes content prop
-        return <CodeEditorWebview initialContent={noteData.content} />;
+        return (
+            <CodeEditorWebview 
+                key={noteData.id}
+                initialContent={noteData.content} 
+                onChange={handleContentChange} 
+            />
+        );
       case 'canvas':
-        return <CanvasComponent initialData={noteData.content} />; // Pass data for canvas
+        return <CanvasComponent initialData={noteData.content} />; 
       default:
         return <div>Unsupported note type: {noteData.noteType}.</div>;
     }
@@ -179,7 +200,6 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
   return (
     <div className="h-full">
       
-      {/* 💡 NOTE TYPE SELECTION MODAL */}
       {showTypeSelector && (
           <NoteTypeSelector 
               onSelect={handleSelectNoteType} 
@@ -212,7 +232,6 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
           </h1>
           <div className="flex-grow overflow-y-auto">
             {noteData.content === '' && !showTypeSelector ? (
-                // If data is fetched but content is empty, display a button to open modal
                 <div className="flex flex-col items-center justify-center h-full text-gray-400">
                     <p className="mb-4 text-lg">This note is uninitialized.</p>
                     <button 
@@ -223,7 +242,6 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
                     </button>
                 </div>
             ) : (
-                // Render content if it exists or if the type has just been selected
                 renderNoteContent()
             )}
           </div>

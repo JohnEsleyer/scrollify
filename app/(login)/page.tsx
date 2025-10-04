@@ -1,4 +1,3 @@
-// app/page.tsx (This will serve as the Login Page)
 
 'use client'; // Client Component for hooks and Firebase
 

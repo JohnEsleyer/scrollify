@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
+import { useDebounce } from '@/hooks/useDebounce';
 
 interface CodeState {
   html: string;
@@ -31,11 +32,29 @@ const initialCode: CodeState = {
 
 interface CodeEditorWebviewProps {
   initialContent?: string; 
+  onChange?: (newContentJson: string) => void; 
 }
+const CodeEditorWebview: React.FC<CodeEditorWebviewProps> = ({ initialContent, onChange}) => {  
+  const [code, setCode] = useState<CodeState>(initialCode);
+  
+  const codeJsonString = JSON.stringify(code);
+  const debouncedCodeJson = useDebounce(codeJsonString, 1000); 
 
-const CodeEditorWebview: React.FC<CodeEditorWebviewProps> = ({ initialContent }) => {  const [code, setCode] = useState<CodeState>(initialCode);
 
+  useEffect(() => {
+    const initialJsonString = JSON.stringify(getInitialState(initialContent));
+    
+    if (onChange && debouncedCodeJson !== initialJsonString) {
+        console.log("Saving Webview code via debounce...");
+        onChange(debouncedCodeJson);
+    }
+    
+  }, [debouncedCodeJson, onChange, initialContent]);
 
+   useEffect(() => {
+      setCode(getInitialState(initialContent));
+  }, [initialContent]);
+  
   const [activeTab, setActiveTab] = useState<'editor' | 'webview'>('editor');
   const [editorPanel, setEditorPanel] = useState<'html' | 'css' | 'js'>('html');
 
@@ -47,6 +66,8 @@ const CodeEditorWebview: React.FC<CodeEditorWebviewProps> = ({ initialContent })
       }));
     }
   }, [editorPanel]);
+
+ 
 
   const srcDoc = useMemo(() => {
     return `
