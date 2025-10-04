@@ -1,5 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
+import { getFirestore } from "firebase/firestore"; 
+import { getAuth, onAuthStateChanged, User } from "firebase/auth";
 
 const firebaseConfig = {
   
@@ -13,4 +15,15 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+
+// Check if the app is client-side before calling getAnalytics
+let analytics;
+if (typeof window !== 'undefined') {
+    analytics = getAnalytics(app);
+}
+
+export const db = getFirestore(app);
+export const auth = getAuth(app);
+export const checkAuthState = (callback: (user: User | null) => void) => {
+    return onAuthStateChanged(auth, callback);
+};

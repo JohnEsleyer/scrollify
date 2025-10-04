@@ -1,14 +1,47 @@
+// app/home/page.tsx
 
-'use client'
+'use client'; // Client Component for hooks and Firebase
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { checkAuthState } from '@/lib/firebase';
+import { ViewState } from '@/lib/types';
 import NavigatorComponent from '@/components/NavigatorComponent';
 import NoteView from '@/components/NoteView';
-import { ViewState } from '@/lib/types'; 
 
-const AppContainer: React.FC = () => {
+const HomePage: React.FC = () => {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [isAuth, setIsAuth] = useState(false);
+
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<ViewState>('navigator');
+
+
+  // --- AUTH CHECK ---
+  useEffect(() => {
+    const unsubscribe = checkAuthState((user) => {
+      if (user) {
+        setIsAuth(true);
+      } else {
+        // Redirect to login page if unauthenticated
+        router.replace('/'); 
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [router]);
+
+  if (loading || !isAuth) {
+    return (
+        <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
+            <div className="text-xl">Loading application...</div>
+        </div>
+    );
+  }
+
+  // --- HOME PAGE LOGIC (Your Provided Component) ---
 
   const handleNoteSelect = (noteId: string) => {
     setActiveNoteId(noteId);
@@ -61,4 +94,4 @@ const AppContainer: React.FC = () => {
   );
 };
 
-export default AppContainer;
+export default HomePage;

@@ -9,7 +9,6 @@ import {
     AppWindow
 } from 'lucide-react';
 
-// Mock Data 
 const mockNotes: Note[] = [
   { 
     id: 'n1', 

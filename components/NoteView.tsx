@@ -41,11 +41,8 @@ const initialSidebarItems: SidebarItem[] = [
 
 
 const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
-   // 💡 State for Sidebar Items
   const [sidebarItems, setSidebarItems] = useState<SidebarItem[]>(initialSidebarItems);
-  
-  // 💡 CRUD Handlers
-  
+
   // CREATE
   const handleCreateSideNote = () => {
     const newId = Date.now().toString();
@@ -111,14 +108,10 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
         <h1 className="text-xl font-bold text-white mt-2">{noteData.title}</h1>
       </div>
       
-      {/* The SidebarWrapper now contains the main note content. */}
-      {/* The main content area in SidebarWrapper is what renders the main note. */}
-      {/* We slightly modify SidebarWrapper to *always* display the main content
-          and use the `items` for the side-notes panel. */}
+    
       <SidebarWrapper 
         items={sidebarItems} // 💡 Pass state data
         defaultItemId={defaultSidebarId}
-        // 💡 Pass CRUD handlers
         onCreate={handleCreateSideNote}
         onUpdate={handleUpdateSideNote}
         onDelete={handleDeleteSideNote}

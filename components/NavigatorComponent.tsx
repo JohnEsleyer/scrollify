@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import FolderList from '@/components/FolderList';
 import NoteList from './NoteList';
 import { ChevronLeft, Plus } from 'lucide-react';
-import { Folder, Note } from '@/lib/types'; 
+import { Entity, Folder, Note } from '@/lib/types'; 
+import { db } from '@/lib/firebase';
+import { collection, query, where, onSnapshot, DocumentData, DocumentReference, DocumentSnapshot, Timestamp, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore'; 
 
 interface NavData {
     [parentId: string]: {
@@ -11,6 +13,37 @@ interface NavData {
         parentFolderId: string | 'root';
     };
 }
+
+
+const entityConverter = (snapshot: DocumentSnapshot<DocumentData>): Folder | Note => {
+    const data = snapshot.data();
+    if (!data) throw new Error("Document data not found.");
+
+    // Convert Firestore Timestamps to JS numbers
+    const createdAt = (data.createdAt as Timestamp)?.toMillis() || Date.now();
+    const updatedAt = (data.updatedAt as Timestamp)?.toMillis() || Date.now();
+
+    const baseEntity: Entity = {
+        id: snapshot.id, 
+        name: data.name as string,
+        parentId: data.parentId as string,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+        type: data.type as 'folder' | 'note',
+    };
+
+    if (data.type === 'folder') {
+        return baseEntity as Folder;
+    } 
+    
+    return {
+        ...baseEntity,
+        noteType: data.noteType as any, 
+        content: data.content as string,
+        preview: data.preview as string,
+    } as Note;
+};
+
 
 const initialMockData: NavData = {
     'root': {
@@ -51,7 +84,9 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
   const [activeTab, setActiveTab] = useState<'folders' | 'notes'>('notes');
   const [currentPath, setCurrentPath] = useState<string[]>([]); 
   const [navData, setNavData] = useState<NavData>(initialMockData);
-  
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   
   const currentFolderId = currentPath.length > 0 
     ? currentPath[currentPath.length - 1] 
@@ -61,147 +96,184 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
   const dataFallback = { folders: [], notes: [], parentFolderId: 'root' };
   
   const currentData = navData[currentFolderId] || dataFallback;  
-  const folders = currentData.folders;
-  const notes = currentData.notes;
-  
 
+   
+  // Navigation and UI logic
   const handleFolderClick = (folderId: string) => {
-    // Navigate IN: Add the new folder ID to the path
     setCurrentPath(prevPath => [...prevPath, folderId]);
   };
 
   const handleNavigateBack = () => {
     if (currentPath.length > 0) {
-      // Navigate OUT: Remove the last folder ID from the path
       setCurrentPath(prevPath => prevPath.slice(0, -1));
     }
   };
   
 
-   const handleCreateFolder = () => {
+  // CREATE Folder
+  const handleCreateFolder = async () => {
     const folderName = prompt('Enter folder name:', `New Folder ${folders.length + 1}`);
     if (!folderName) return;
 
-    const newFolder: Folder = {
-      id: `f_${Date.now()}`,
-      name: folderName,
-      parentId: currentFolderId,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      type: 'folder',
-    };
-
-    setNavData(prevData => ({
-      ...prevData,
-      [currentFolderId]: { // Add folder to current list
-        ...prevData[currentFolderId],
-        folders: [...prevData[currentFolderId].folders, newFolder],
-      },
-      [newFolder.id]: { // Initialize data for the new folder
-        parentFolderId: currentFolderId,
-        folders: [],
-        notes: [],
-      },
-    }));
+    try {
+      await addDoc(collection(db, 'entities'), {
+        name: folderName,
+        parentId: currentFolderId,
+        type: 'folder',
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      });
+      // The onSnapshot listener will automatically update the state (folders/notes)
+    } catch (error) {
+      console.error("Error creating folder: ", error);
+      alert("Failed to create folder.");
+    }
   };
 
-  const handleUpdateFolder = (folderId: string) => {
+  // UPDATE Folder (Rename)
+  const handleUpdateFolder = async (folderId: string) => {
     const currentFolder = folders.find(f => f.id === folderId);
     if (!currentFolder) return;
     
     const newName = prompt('Rename folder:', currentFolder.name);
     if (!newName || newName === currentFolder.name) return;
 
-    setNavData(prevData => ({
-      ...prevData,
-      [currentFolderId]: {
-        ...prevData[currentFolderId],
-        folders: prevData[currentFolderId].folders.map(f => 
-          f.id === folderId ? { ...f, name: newName, updatedAt: Date.now() } : f
-        ),
-      },
-    }));
+    try {
+      const folderRef = doc(db, 'entities', folderId);
+      await updateDoc(folderRef, {
+        name: newName,
+        updatedAt: Timestamp.now(),
+      });
+    } catch (error) {
+      console.error("Error updating folder: ", error);
+      alert("Failed to rename folder.");
+    }
   };
 
-  const handleDeleteFolder = (folderId: string) => {
-    // In a real app, this would recursively delete children. Here, we just filter it out.
-    setNavData(prevData => {
-      const { [folderId]: deleted, ...rest } = prevData;
-      
-      return {
-        ...rest,
-        [currentFolderId]: {
-          ...prevData[currentFolderId],
-          folders: prevData[currentFolderId].folders.filter(f => f.id !== folderId),
-        },
-      };
-    });
+  // DELETE Folder
+  const handleDeleteFolder = async (folderId: string) => {
+    if (!window.confirm("WARNING: Deleting a folder is permanent. In a full implementation, all contents would be deleted too.")) {
+        return;
+    }
+
+    try {
+      // In a production app, you would use a Cloud Function to recursively delete children.
+      // Here, we just delete the parent document.
+      const folderRef = doc(db, 'entities', folderId);
+      await deleteDoc(folderRef);
+    } catch (error) {
+      console.error("Error deleting folder: ", error);
+      alert("Failed to delete folder.");
+    }
   };
 
-  const handleCreateNote = () => {
+  // CREATE Note
+  const handleCreateNote = async () => {
     const noteName = prompt('Enter note title:', `New Note ${notes.length + 1}`);
     if (!noteName) return;
 
-    const newNote: Note = {
-      id: `n_${Date.now()}`,
-      name: noteName,
-      parentId: currentFolderId,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      noteType: 'markdown', 
-      type: 'note', 
-      content: '{"root":{"children":[],"direction":"ltr","format":"","indent":0,"type":"root","version":1}}', 
-      preview: 'Start writing here...',
-    };
-
-    setNavData(prevData => ({
-      ...prevData,
-      [currentFolderId]: {
-        ...prevData[currentFolderId],
-        notes: [...prevData[currentFolderId].notes, newNote],
-      },
-    }));
-    onNoteSelect(newNote.id); // Automatically select the new note
+    try {
+      const docRef = await addDoc(collection(db, 'entities'), {
+        name: noteName,
+        parentId: currentFolderId,
+        type: 'note',
+        noteType: 'markdown', 
+        content: '{"root":{"children":[],"direction":"ltr","format":"","indent":0,"type":"root","version":1}}', 
+        preview: 'Start writing here...',
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      });
+      onNoteSelect(docRef.id); // Select the new note using its new Firestore ID
+    } catch (error) {
+      console.error("Error creating note: ", error);
+      alert("Failed to create note.");
+    }
   };
 
-  const handleUpdateNote = (noteId: string) => {
+  // UPDATE Note (Rename)
+  const handleUpdateNote = async (noteId: string) => {
     const currentNote = notes.find(n => n.id === noteId);
     if (!currentNote) return;
     
     const newName = prompt('Rename note:', currentNote.name);
     if (!newName || newName === currentNote.name) return;
 
-    setNavData(prevData => ({
-      ...prevData,
-      [currentFolderId]: {
-        ...prevData[currentFolderId],
-        notes: prevData[currentFolderId].notes.map(n => 
-          n.id === noteId ? { ...n, name: newName, updatedAt: Date.now() } : n
-        ),
-      },
-    }));
-  };
-
-  const handleDeleteNote = (noteId: string) => {
-    setNavData(prevData => ({
-      ...prevData,
-      [currentFolderId]: {
-        ...prevData[currentFolderId],
-        notes: prevData[currentFolderId].notes.filter(n => n.id !== noteId),
-      },
-    }));
-    // Deselect if the active note was deleted
-    if (activeNoteId === noteId) {
-        onNoteSelect(''); 
+    try {
+      const noteRef = doc(db, 'entities', noteId);
+      await updateDoc(noteRef, {
+        name: newName,
+        updatedAt: Timestamp.now(),
+      });
+    } catch (error) {
+      console.error("Error updating note: ", error);
+      alert("Failed to rename note.");
     }
   };
 
-    
-  const currentFolderName = currentPath.length > 0 
-    ? navData[currentPath[currentPath.length - 1]]?.folders.find(f => f.id === currentFolderId)?.name || currentFolderId
-    : 'Root';
-    
+  // DELETE Note
+  const handleDeleteNote = async (noteId: string) => {
+    try {
+      const noteRef = doc(db, 'entities', noteId);
+      await deleteDoc(noteRef);
+      
+      if (activeNoteId === noteId) {
+        onNoteSelect(''); 
+      }
+    } catch (error) {
+      console.error("Error deleting note: ", error);
+      alert("Failed to delete note.");
+    }
+  };
 
+
+  useEffect(() => {
+    setIsLoading(true);
+    
+    // Query for Folders
+    const foldersQuery = query(
+      collection(db, 'entities'),
+      where('type', '==', 'folder'),
+      where('parentId', '==', currentFolderId)
+    );
+    
+    // Query for Notes
+    const notesQuery = query(
+      collection(db, 'entities'),
+      where('type', '==', 'note'),
+      where('parentId', '==', currentFolderId)
+    );
+
+    // folder listener
+    const unsubscribeFolders = onSnapshot(foldersQuery, (snapshot) => {
+        const fetchedFolders: Folder[] = snapshot.docs.map(doc => entityConverter(doc) as Folder);
+        setFolders(fetchedFolders);
+        setIsLoading(false);
+    }, (error) => {
+        console.error("Error fetching folders: ", error);
+        setIsLoading(false);
+    });
+
+    // Setup notes listener
+    const unsubscribeNotes = onSnapshot(notesQuery, (snapshot) => {
+        const fetchedNotes: Note[] = snapshot.docs.map(doc => entityConverter(doc) as Note);
+        setNotes(fetchedNotes);
+        setIsLoading(false);
+    }, (error) => {
+        console.error("Error fetching notes: ", error);
+        setIsLoading(false);
+    });
+
+
+    // Cleanup function: stop listening when component unmounts or currentFolderId changes
+    return () => {
+      unsubscribeFolders();
+      unsubscribeNotes();
+    };
+  }, [currentFolderId]);
+    
+  const currentFolderName = currentFolderId === 'root' 
+    ? 'Root' 
+    : folders.find(f => f.id === currentFolderId)?.name || '...';
   
   const isRoot = currentFolderId === 'root';
   const createButtonLabel = activeTab === 'folders' ? 'Folder' : 'Note';
@@ -209,6 +281,7 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
 
   return (
     <div className="h-full flex flex-col p-4">
+      {/* Back Button and Current Location Label */}
       <div className="mb-4 flex items-center">
         <button 
           onClick={handleNavigateBack}
@@ -241,17 +314,18 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
       
       {/* Content */}
       <div className="flex-grow overflow-y-auto">
-        {activeTab === 'folders' && (
+        {isLoading && <p className="text-gray-500 italic p-2">Loading...</p>}
+        {!isLoading && activeTab === 'folders' && (
           <FolderList 
-            folders={folders as Folder[]} 
+            folders={folders} 
             onFolderClick={handleFolderClick}
             onUpdateFolder={handleUpdateFolder} 
             onDeleteFolder={handleDeleteFolder}
           />
         )}
-        {activeTab === 'notes' && (
+        {!isLoading && activeTab === 'notes' && (
           <NoteList 
-            notes={notes as Note[]} 
+            notes={notes} 
             onNoteClick={onNoteSelect}
             activeNoteId={activeNoteId}
             onUpdateNote={handleUpdateNote} 
