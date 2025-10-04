@@ -1,31 +1,25 @@
-// app/page.tsx
+
 'use client'
 
 import React, { useState } from 'react';
 import NavigatorComponent from '@/components/NavigatorComponent';
 import NoteView from '@/components/NoteView';
 import { ViewState } from '@/lib/types'; 
-// NOTE: You might need to adjust the import path for your Layout component based on where you moved it.
 
 const AppContainer: React.FC = () => {
-  // State to track the currently active note ID
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
-  // State to manage the active view on mobile: 'navigator' or 'note'
   const [mobileView, setMobileView] = useState<ViewState>('navigator');
 
-  // Function called when a note is selected in the Navigator
   const handleNoteSelect = (noteId: string) => {
     setActiveNoteId(noteId);
     setMobileView('note'); 
   };
   
-  // Function to switch back to the navigator (for mobile 'back' button)
   const handleBackToNavigator = () => {
     setMobileView('navigator');
     setActiveNoteId(null); 
   };
 
-  // The component returns your main application structure
   return (
     <div className="flex h-screen overflow-hidden">
       
@@ -43,7 +37,7 @@ const AppContainer: React.FC = () => {
         />
       </div>
 
-      {/* 2. Note View - Always visible on desktop, conditionally rendered on mobile */}
+      {/* Note View - Always visible on desktop, conditionally rendered on mobile */}
       {activeNoteId && (
         <div 
           className={`
