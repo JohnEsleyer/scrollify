@@ -21,78 +21,94 @@ import { HeadingNode, QuoteNode } from '@lexical/rich-text';
 import { ListItemNode, ListNode } from '@lexical/list';
 import { 
     ParagraphNode, TextNode, EditorState, LexicalEditor, 
-    ElementNode, LexicalNode 
+    ElementNode, LexicalNode, $isElementNode
 } from 'lexical'; 
 import { LinkNode } from '@lexical/link'; 
 import { $createImageNode, $isImageNode, ImageNode} from '@/nodes/ImageNode'; 
 import { ImageTransformerPlugin } from '../nodes/ImageTransformerPlugin';
 import { CodeHighlightNode, CodeNode } from '@lexical/code';
 import { HighlightPlugin } from './HighlightPlugin';
+import { useEffect } from 'react';
 
 const ALL_TRANSFORMERS: Transformer[] = [
     ...CORE_TRANSFORMERS, 
     CODE_TRANSFORMER,
 ];
 
-const EMPTY_EDITOR_STATE = '{"root":{"children":[{"children":[],"direction":"ltr","format":"","indent":0,"type":"paragraph","version":1}],"direction":"ltr","format":"","indent":0,"type":"root","version":1}}';
-
+const EMPTY_EDITOR_STATE = 
+    '{"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "text": "", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}}';
+ 
 const isValidJsonString = (str: string): boolean => {
     if (!str || typeof str !== 'string' || str.trim().length === 0) {
+        console.log("Validation: Fail (empty/null)"); 
         return false;
     }
-    // Check if it looks like a Lexical-style object start
-    return str.trim().startsWith('{');
-};
-
-const createInitialEditorState = (content?: string) => (editor: LexicalEditor) => {
-   let contentToParse = EMPTY_EDITOR_STATE;
-
-    if (content && isValidJsonString(content)) {
-        contentToParse = content;
-    } else if (content) {
-        // Log a warning if content exists but is invalid, and use the empty state
-        console.warn("Invalid content structure received. Using EMPTY_EDITOR_STATE. Received:", content);
-    }
-
+    
     try {
-            // Now 'contentToParse' is guaranteed to be a string and likely valid JSON structure
-            const editorState = editor.parseEditorState(contentToParse); 
-            editor.setEditorState(editorState);
-        } catch (e) {
-            console.error("Critical: Could not parse final content string. This should not happen.", e);
-            
-            // As a final, final fallback, set the empty state directly
-            editor.setEditorState(editor.parseEditorState(EMPTY_EDITOR_STATE));
-        }
-};
+        const obj = JSON.parse(str);
+     
+        const isValidLexical = typeof obj === 'object' && obj !== null && 
+                               'root' in obj && 'children' in obj.root;
 
+        console.log(`Validation: Pass (Valid Lexical structure: ${isValidLexical})`); 
+        return isValidLexical;
+    } catch (e) {
+        console.log("Validation: Fail (Not JSON)"); 
+        return false;
+    }
+};
+const createInitialEditorState = (contentJson: string) => (editor: LexicalEditor) => {
+    console.log(`[Lexical Init] Attempting to set state from string (Length: ${contentJson.length}):`, contentJson.substring(0, 50) + '...');
+    try {
+        const editorState = editor.parseEditorState(contentJson); 
+        
+        const rootNode = editorState._nodeMap.get('root');
+        let childrenCount = 0; 
+        let isEmpty = false;
+
+        if (rootNode && $isElementNode(rootNode)) {
+             childrenCount = rootNode.getChildrenSize();
+             isEmpty = childrenCount === 0;
+        }
+
+        console.log("[Lexical Init] Successfully parsed state. Root children count:", childrenCount);
+        
+        if (isEmpty) {
+             console.warn("[Lexical Init] Parsed state is valid JSON but has an empty root node. Forcing fallback to safe state.");
+             editor.setEditorState(editor.parseEditorState(EMPTY_EDITOR_STATE));
+        } else {
+             editor.setEditorState(editorState); 
+        }
+
+    } catch (e) {
+        console.error("CRITICAL: Failed to set state with final string. Resetting.", e);
+        editor.setEditorState(editor.parseEditorState(EMPTY_EDITOR_STATE));
+        console.warn("[Lexical Init] Resetting editor state to safe empty state.");
+    }
+};
 
 
 interface StateChangeReporterProps {
-    onChange?: (editorState: EditorState, editor: LexicalEditor) => void;
+    onLexicalUpdate: (editorState: EditorState, editor: LexicalEditor) => void; 
 }
 
-function StateChangeReporter({ onChange }: StateChangeReporterProps) {
+
+function StateChangeReporter({ onLexicalUpdate }: StateChangeReporterProps) {
     const [editor] = useLexicalComposerContext();
     React.useEffect(() => {
-        if (!onChange) return;
-        return editor.registerUpdateListener(({ editorState }) => {
-            onChange(editorState, editor);
+        if (!onLexicalUpdate) return;
+
+        return editor.registerUpdateListener(({ editorState }) => { 
+            onLexicalUpdate(editorState, editor); 
         });
-    }, [editor, onChange]);
+    }, [editor, onLexicalUpdate]);
     return null;
 }
 
-
-interface ReusableEditorProps {
-    content?: string;
-    onChange?: (editorState: EditorState, editor: LexicalEditor) => void;
-}
-
-const createInitialConfig = (content?: string): InitialConfigType => ({
+const createInitialConfig = (contentJson: string): InitialConfigType => ({
     namespace: 'Basic-Lexical-Editor',
     editable: true, 
-    editorState: createInitialEditorState(content), 
+    editorState: createInitialEditorState(contentJson), 
     
     nodes: [
         ParagraphNode, TextNode, HeadingNode, QuoteNode, ListNode, 
@@ -141,9 +157,39 @@ const createInitialConfig = (content?: string): InitialConfigType => ({
     },
 });
 
+
+interface ReusableEditorProps {
+    content?: string;
+    onChange?: (newContentJson: string) => void; 
+}
+
+
 export default function ReusableMarkdownEditor({ content, onChange }: ReusableEditorProps) {
-    const initialConfig = createInitialConfig(content);
-    
+    useEffect(() => {
+        console.log(`[Editor Mount/Update] Incoming 'content' prop changed (Length: ${content?.length || 0}):`, content ? content.substring(0, 50) + '...' : 'undefined/null');
+    }, [content]);
+
+     const validatedContent = React.useMemo(() => {
+        const result = (content && isValidJsonString(content)) ? content : EMPTY_EDITOR_STATE;
+        console.log(`[Editor Validation] Validated content determined. Used Fallback: ${result === EMPTY_EDITOR_STATE}`);
+        return result;
+    }, [content]);
+
+
+    const initialConfig = React.useMemo(() => {
+        console.log("[Editor Config] Creating new initialConfig. This triggers full Lexical re-init.");
+        return createInitialConfig(validatedContent);
+    }, [validatedContent]);
+ 
+    const handleLexicalUpdate = React.useCallback((editorState: EditorState, editor: LexicalEditor) => {
+        if (!onChange) return;
+        
+        const jsonString = JSON.stringify(editorState.toJSON());
+        onChange(jsonString);
+        
+    }, [onChange]);
+
+
     return (
      <LexicalComposer initialConfig={initialConfig}>
             
@@ -159,11 +205,9 @@ export default function ReusableMarkdownEditor({ content, onChange }: ReusableEd
                 <MarkdownShortcutPlugin transformers={ALL_TRANSFORMERS} />
                 <ImageTransformerPlugin /> 
                 
-                {/* 🚀 ADD THE HIGHLIGHTING PLUGIN HERE */}
                 <HighlightPlugin /> 
                 
-                <StateChangeReporter onChange={onChange} />
-                
+                <StateChangeReporter onLexicalUpdate={handleLexicalUpdate} />                 
             </div>
         </LexicalComposer>
     );

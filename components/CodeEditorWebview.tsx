@@ -13,8 +13,29 @@ const initialCode: CodeState = {
   js: 'console.log("JavaScript executed!");\nalert("Script loaded!");',
 };
 
-const CodeEditorWebview: React.FC = () => {
-  const [code, setCode] = useState<CodeState>(initialCode);
+ const getInitialState = (content: string | undefined): CodeState => {
+      if (content && content.startsWith('{') && content.endsWith('}')) {
+          try {
+              const parsed = JSON.parse(content);
+              return {
+                  html: parsed.html || initialCode.html,
+                  css: parsed.css || initialCode.css,
+                  js: parsed.js || initialCode.js,
+              };
+          } catch (e) {
+              console.error("Failed to parse code editor JSON:", e);
+          }
+      }
+      return initialCode; 
+  };
+
+interface CodeEditorWebviewProps {
+  initialContent?: string; 
+}
+
+const CodeEditorWebview: React.FC<CodeEditorWebviewProps> = ({ initialContent }) => {  const [code, setCode] = useState<CodeState>(initialCode);
+
+
   const [activeTab, setActiveTab] = useState<'editor' | 'webview'>('editor');
   const [editorPanel, setEditorPanel] = useState<'html' | 'css' | 'js'>('html');
 
