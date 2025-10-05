@@ -1,10 +1,10 @@
 
-'use client'; // Client Component for hooks and Firebase
+'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation'; // Next.js router for redirection
+import { useRouter } from 'next/navigation';
 import { checkAuthState } from '@/lib/firebase';
-import { SignInPage } from '@/components/SignInPage'; // Your component from the last step
+import { SignInPage } from '@/components/SignInPage'; 
 import { User } from 'firebase/auth';
 
 const LoginPage: React.FC = () => {
@@ -13,14 +13,12 @@ const LoginPage: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    // 1. Set up Firebase Auth listener
+
     const unsubscribe = checkAuthState((user) => {
       setUser(user);
       setLoading(false);
       
-      // 2. Handle immediate redirection if user is found
       if (user) {
-        // Redirect to /home if authenticated
         router.replace('/home'); 
       }
       // If user is null, stay on this page
@@ -32,13 +30,11 @@ const LoginPage: React.FC = () => {
 
 
   const handleAuthSuccess = (uid: string) => {
-    // Firebase listener in useEffect should catch this and redirect,
-    // but we can force it here for immediate response.
     console.log(`User logged in with UID: ${uid}. Redirecting...`);
     router.replace('/home');
   };
 
-  // If loading, show a simple loading screen
+  // If loading, show loading screen
   if (loading || user) {
     return (
         <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">

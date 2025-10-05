@@ -1,19 +1,21 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { SidebarWrapper } from './SidebarWrapper';
 import ReusableMarkdownEditor from './ReusableMarkdownEditor';
 import CodeEditorWebview from './CodeEditorWebview';
 import { Whiteboard } from './whiteboard/Whiteboard';
-import { SidebarItem, Note, NoteType } from '@/lib/types';
+import { SidebarItem, Note, NoteType, SideNote } from '@/lib/types'; // Assume SideNote type is available
 import { NoteTypeSelector } from './NoteTypeSelector'; 
 
 import { db } from '@/lib/firebase'; 
-import { doc, getDoc, updateDoc, Timestamp, DocumentSnapshot } from 'firebase/firestore'; 
+import { 
+    doc, getDoc, updateDoc, Timestamp, DocumentSnapshot, 
+    collection, query, where, onSnapshot, addDoc, deleteDoc 
+} from 'firebase/firestore'; 
+
 
 interface CanvasComponentProps {
     initialData: string;
 }
-
 
 const CanvasComponent: React.FC<CanvasComponentProps> = ({ initialData }) => (
   <div className="flex justify-center items-center h-full text-2xl text-gray-500">
@@ -24,7 +26,7 @@ const CanvasComponent: React.FC<CanvasComponentProps> = ({ initialData }) => (
 const getInitialContent = (type: NoteType): string => {
     switch (type) {
         case 'markdown':
-            return '{"root":{"children":[{"children":[{"detail":0,"format":0,"mode":"normal","text":"Start writing...","type":"text","version":1}],"direction":"ltr","format":"","indent":0,"type":"paragraph","version":1}],"direction":"ltr","format":"","indent":0,"type":"root","version":1}}';
+            return '{"root":{"children":[{"children":[{"detail":0,"format":0,"mode":"normal","text":"Start writing...","type":"text","version":1}],"direction":".","format":"","indent":0,"type":"paragraph","version":1}],"direction":".","format":"","indent":0,"type":"root","version":1}}';
         case 'webview':
             return '// HTML/CSS/JS code here';
         case 'canvas':
@@ -34,12 +36,16 @@ const getInitialContent = (type: NoteType): string => {
     }
 };
 
-const initialSidebarItems: SidebarItem[] = [
-  { id: 'references', label: 'References (Markdown)', component: <ReusableMarkdownEditor content='{"root":{"children":[{"children":[{"detail":0,"format":0,"mode":"normal","text":"Reference details...","type":"text","version":1}],"direction":"ltr","format":"","indent":0,"type":"paragraph","version":1}],"direction":"ltr","format":"","indent":0,"type":"root","version":1}}'/> },
-  { id: 'attachments', label: 'Attachments (Webview)', component: <CodeEditorWebview /> },
-  { id: 'sketchpad', label: 'Sketchpad (WhiteBoard)', component: <Whiteboard /> },
-];
-
+const entityConverter = (snapshot: DocumentSnapshot) => {
+    const data = snapshot.data();
+    if (!data) return null;
+    return {
+        id: snapshot.id,
+        ...data,
+        createdAt: (data.createdAt as Timestamp)?.toMillis() || Date.now(),
+        updatedAt: (data.updatedAt as Timestamp)?.toMillis() || Date.now(),
+    };
+};
 
 interface NoteViewProps {
   noteId: string;
@@ -48,11 +54,12 @@ interface NoteViewProps {
 
 
 const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
-  const [sidebarItems, setSidebarItems] = useState<SidebarItem[]>(initialSidebarItems);
-  
-const [noteData, setNoteData] = useState<Note | null>(null);
+  const [noteData, setNoteData] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
   const [showTypeSelector, setShowTypeSelector] = useState(false);
+  
+  const [sideNotes, setSideNotes] = useState<SideNote[]>([]);
+
 
   useEffect(() => {
     if (!noteId) return;
@@ -64,15 +71,13 @@ const [noteData, setNoteData] = useState<Note | null>(null);
 
       if (docSnap.exists()) {
         const data = docSnap.data();
+        
         const INITIAL_EMPTY_CONTENT = '{"root":{"children":[],"direction":"ltr","format":"","indent":0,"type":"root","version":1}}';
 
         const isUninitializedDefaultNote = 
           data.noteType === 'markdown' && 
           data.content === INITIAL_EMPTY_CONTENT;
         
-        // Check if the note is initialized (has a content field)
-        const isInitialized = data.content !== undefined && data.content !== null;
-
         setNoteData({
             id: docSnap.id,
             name: data.name,
@@ -87,16 +92,12 @@ const [noteData, setNoteData] = useState<Note | null>(null);
         
         setLoading(false);
         
-        // Show the selector if content is empty (uninitialized)
         if (isUninitializedDefaultNote) {
           setShowTypeSelector(true);
         } else {
-            // If the content is an empty string but the noteType has been set (e.g., webview), 
-            // we assume it was initialized and then cleared, so we don't show the selector.
-            setShowTypeSelector(false); 
+          setShowTypeSelector(false); 
         }
       } else {
-        // Should not happen if Navigator is working correctly, but good for error handling
         console.error("No such note document!");
         setNoteData(null);
         setLoading(false);
@@ -105,6 +106,29 @@ const [noteData, setNoteData] = useState<Note | null>(null);
 
     fetchNote();
   }, [noteId]);
+
+
+  useEffect(() => {
+    if (!noteId) return;
+
+    const sideNotesQuery = query(
+      collection(db, 'entities'),
+      where('parentId', '==', noteId),
+      where('type', '==', 'side_note')
+    );
+
+    const unsubscribe = onSnapshot(sideNotesQuery, (snapshot) => {
+        const fetchedSideNotes: SideNote[] = snapshot.docs.map(doc => entityConverter(doc) as SideNote);
+        fetchedSideNotes.sort((a, b) => a.createdAt - b.createdAt); 
+        setSideNotes(fetchedSideNotes);
+    }, (error) => {
+        console.error("Error fetching side notes: ", error);
+    });
+
+    return () => unsubscribe(); 
+  }, [noteId]); 
+
+
 
   const handleSelectNoteType = async (type: NoteType) => {
     if (!noteData) return;
@@ -129,42 +153,138 @@ const [noteData, setNoteData] = useState<Note | null>(null);
     }
   };
 
-  
-  // Sidebar CRUD Handlers
-  const handleCreateSideNote = () => {/* ... */};
-  const handleUpdateSideNote = (id: string, newLabel: string) => {/* ... */};
-  const handleDeleteSideNote = (id: string) => {/* ... */};
-  
-  // Render the appropriate editor/viewer
- const handleContentChange = React.useCallback(async (newContentJson: string) => {
+  const handleContentChange = useCallback(async (newContentJson: string) => {
     if (!noteId) return;
     
     setNoteData(prev => prev ? { ...prev, content: newContentJson, updatedAt: Date.now() } : null);
     
     try {
         const noteRef = doc(db, 'entities', noteId);
-        
         await updateDoc(noteRef, {
             content: newContentJson,
             updatedAt: Timestamp.now(),
         });
-        
-        console.log(`[Firestore] Successfully saved content for note: ${noteId}`);
+        console.log(`[Firestore] Saved main note content: ${noteId}`);
         
     } catch (error) {
-        console.error("Failed to save note content:", error);
+        console.error("Failed to save main note content:", error);
     }
   }, [noteId]);
 
-  // --- 3. Renderers and Sidebar Logic ---
+
+  const handleSideNoteContentChange = useCallback(async (sideNoteId: string, newContentJson: string) => {
+    setSideNotes(prevNotes => prevNotes.map(n => 
+        n.id === sideNoteId ? { ...n, content: newContentJson, updatedAt: Date.now() } : n
+    ));
+
+    try {
+        const sideNoteRef = doc(db, 'entities', sideNoteId);
+        await updateDoc(sideNoteRef, {
+            content: newContentJson,
+            updatedAt: Timestamp.now(),
+        });
+        console.log(`[Firestore] Saved side note content: ${sideNoteId}`);
+    } catch (error) {
+        console.error("Failed to save side note content:", error);
+    }
+  }, []);
+
+  // CREATE Side Note
+  const handleCreateSideNote = async () => {
+    if (!noteId) return;
+    
+    const noteName = prompt('Enter side note title:', `New Side Note ${sideNotes.length + 1}`);
+    if (!noteName) return;
+
+    try {
+      await addDoc(collection(db, 'entities'), {
+        name: noteName,
+        parentId: noteId, 
+        type: 'side_note',
+        noteType: 'markdown', 
+        content: getInitialContent('markdown'), 
+        preview: 'Side note details...',
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      });
+    } catch (error) {
+      console.error("Error creating side note: ", error);
+      alert("Failed to create side note.");
+    }
+  };
+
+  // UPDATE Side Note (Rename)
+  const handleUpdateSideNote = async (sideNoteId: string, newLabel: string) => {
+    try {
+      const sideNoteRef = doc(db, 'entities', sideNoteId);
+      await updateDoc(sideNoteRef, {
+        name: newLabel,
+        updatedAt: Timestamp.now(),
+      });
+      // Listener handles state update.
+    } catch (error) {
+      console.error("Error updating side note: ", error);
+      alert("Failed to rename side note.");
+    }
+  };
   
-  // Render the appropriate editor/viewer
+  // DELETE Side Note
+  const handleDeleteSideNote = async (sideNoteId: string) => {
+    try {
+      const sideNoteRef = doc(db, 'entities', sideNoteId);
+      await deleteDoc(sideNoteRef);
+      // Listener handles state update.
+    } catch (error) {
+      console.error("Error deleting side note: ", error);
+      alert("Failed to delete side note.");
+    }
+  };
+  
+  // Side Note Rendering Mappers (Memoized) --
+  
+  const mapSideNoteToComponent = useCallback((sideNote: SideNote) => {
+      const onChangeHandler = (content: string) => handleSideNoteContentChange(sideNote.id, content);
+      
+      switch (sideNote.noteType) {
+          case 'markdown':
+              return (
+                  <ReusableMarkdownEditor 
+                      key={sideNote.id}
+                      content={sideNote.content} 
+                      onChange={onChangeHandler} 
+                  />
+              );
+          case 'webview':
+              return (
+                  <CodeEditorWebview 
+                      key={sideNote.id}
+                      initialContent={sideNote.content} 
+                      onChange={onChangeHandler} 
+                  />
+              );
+          case 'canvas':
+              // Canvas is a placeholder, so no onChange is implemented here
+              return <CanvasComponent key={sideNote.id} initialData={sideNote.content} />; 
+          default:
+              return <div>Unsupported side note type: {sideNote.noteType}.</div>;
+      }
+  }, [handleSideNoteContentChange]);
+
+
+  const sidebarItems: SidebarItem[] = useMemo(() => {
+      // Map the fetched sideNotes data to the SidebarWrapper's expected SidebarItem structure
+      return sideNotes.map(note => ({
+          id: note.id,
+          label: note.name,
+          component: mapSideNoteToComponent(note),
+      }));
+  }, [sideNotes, mapSideNoteToComponent]);
+
+  
   const renderNoteContent = () => {
     if (!noteData) return null;
     
-    // The handleContentChange function is now defined at the top level, 
-    // so it doesn't violate the rules when used here.
-    
+    // Only Markdown and Webview get the debounced onChange handler
     switch (noteData.noteType) {
       case 'markdown':
          return (
@@ -194,7 +314,7 @@ const [noteData, setNoteData] = useState<Note | null>(null);
   if (loading) return <div className="p-4 text-gray-400">Loading note content...</div>;
   if (!noteData) return <div className="p-4 text-red-400">Error loading note.</div>;
   
-  const defaultSidebarId = sidebarItems.length > 0 ? sidebarItems[0].id : '';
+  const defaultSidebarId = sidebarItems.length > 0 ? sidebarItems[0].id : 'no-side-notes';
 
 
   return (
@@ -207,7 +327,6 @@ const [noteData, setNoteData] = useState<Note | null>(null);
           />
       )}
       
-      {/* Mobile Back Button and Title */}
       <div className="lg:hidden p-4 bg-gray-900 border-b border-gray-700">
         <button 
           onClick={onBack}

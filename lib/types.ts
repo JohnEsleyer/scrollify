@@ -1,12 +1,10 @@
-
 import { ReactNode } from 'react';
 import { Timestamp } from 'firebase/firestore'; 
 
 export type ViewState = 'navigator' | 'note';
 
 export type NoteType = 'markdown' | 'webview' | 'canvas';
-export type EntityType = 'folder' | 'note';
-
+export type EntityType = 'folder' | 'note' | 'side_note'; 
 
 export type NavItem = Folder | Note;
 
@@ -18,9 +16,9 @@ export interface SidebarItem {
 }
 
 export interface Entity {
-  id: string; // The client-side ID or unique identifier
+  id: string; 
   name: string;
-  parentId: string | 'root'; // ID of the parent folder or 'root'
+  parentId: string | 'root'; 
   createdAt: number;
   updatedAt: number;
   type: EntityType;
@@ -30,24 +28,24 @@ export interface Folder extends Entity {
   type: 'folder';
 }
 
-
 export interface Note extends Entity {
   type: 'note';
   noteType: NoteType;
-  content: string; // JSON/Code/Canvas data
-  preview: string; // Text preview for list
+  content: string; 
+  preview: string; 
 }
 
-export interface SidebarItem {
-  id: string;
-  label: string;
-  component: React.ReactNode;
+export interface SideNote extends Entity {
+    type: 'side_note'; 
+    noteType: NoteType;
+    content: string;
+    preview: string;
 }
 
 export interface FirestoreBase {
     // The ID is the document ID, but we often store it inside as well
     parentId: string | 'root'; 
-    createdAt: Timestamp; // Firestore's native timestamp type
+    createdAt: Timestamp; 
     updatedAt: Timestamp;
     name: string;
 }
@@ -61,4 +59,11 @@ export interface NoteDocument extends FirestoreBase {
     noteType: NoteType;
     content: string; 
     preview: string; 
+}
+
+export interface SideNoteDocument extends FirestoreBase {
+    type: 'side_note';
+    noteType: NoteType;
+    content: string;
+    preview: string;
 }
