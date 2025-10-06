@@ -11,6 +11,7 @@ import {
     collection, query, where, onSnapshot, addDoc, deleteDoc 
 } from 'firebase/firestore'; 
 import { SideNoteTypeSelector } from './SideNoteTypeSelector'; 
+import { Whiteboard } from './whiteboard/Whiteboard';
 
 
 
@@ -36,11 +37,6 @@ interface CanvasComponentProps {
     initialData: string;
 }
 
-const CanvasComponent: React.FC<CanvasComponentProps> = ({ initialData }) => (
-  <div className="flex justify-center items-center h-full text-2xl text-gray-500">
-    Canvas Editor/Viewer Placeholder (Data: {initialData.length > 20 ? initialData.substring(0, 20) + '...' : initialData})
-  </div>
-);
 
 const getInitialContent = (type: NoteType): string => {
     switch (type) {
@@ -49,7 +45,7 @@ const getInitialContent = (type: NoteType): string => {
         case 'webview':
             return DEFAULT_WEBVIEW_CONTENT;
         case 'canvas':
-            return '{"shapes":[]}';
+            return '{"elements":[]}';;
         default:
             return '';
     }
@@ -288,7 +284,6 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
     }
   };
   
-  // Side Note Rendering Mappers (Memoized) --
   const mapSideNoteToComponent = useCallback((sideNote: SideNote) => {
       const onChangeHandler = (content: string) => handleSideNoteContentChange(sideNote.id, content);
       
@@ -312,11 +307,18 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
                   />
               );
           case 'canvas':
-              return <CanvasComponent key={sideNote.id} initialData={sideNote.content} />; 
+              return (
+                  <Whiteboard
+                      key={sideNote.id}
+                      initialContent={sideNote.content} 
+                      onChange={onChangeHandler}
+                      onTyping={handleStartTyping} 
+                  />
+              ); 
           default:
               return <div>Unsupported side note type: {sideNote.noteType}.</div>;
       }
-  }, [handleSideNoteContentChange]);
+  }, [handleSideNoteContentChange, handleStartTyping]); 
 
 
   const sidebarItems: SidebarItem[] = useMemo(() => {
@@ -352,7 +354,14 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
             />
         );
       case 'canvas':
-        return <CanvasComponent initialData={noteData.content} />; 
+        return (
+             <Whiteboard // <-- USE Whiteboard
+                key={noteData.id}
+                initialContent={noteData.content} 
+                onChange={handleContentChange}
+                onTyping={handleStartTyping} 
+            />
+        ); 
       default:
         return <div>Unsupported note type: {noteData.noteType}.</div>;
     }

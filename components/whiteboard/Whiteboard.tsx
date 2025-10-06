@@ -20,6 +20,7 @@ import {
 import { EditLayer } from './EditLayer';
 import '@/styles/WhiteboardStyle.css';
 import { useOrientation } from '@/hooks/useOrientation';
+import { useDebounce } from '@/hooks/useDebounce';
 
 const CANVAS_WIDTH = 1000;
 const CANVAS_HEIGHT = 600;
@@ -27,8 +28,29 @@ const CANVAS_HEIGHT = 600;
 const INTERNAL_WIDTH = 1000;
 const INTERNAL_HEIGHT = 600;
 
-export const Whiteboard: React.FC = () => {
 
+const parseInitialElements = (content: string): WhiteboardElement[] => {
+    try {
+        const data = JSON.parse(content);
+        if (Array.isArray(data.elements)) {
+            return data.elements as WhiteboardElement[];
+        }
+        if (Array.isArray(data)) { 
+            return data as WhiteboardElement[];
+        }
+    } catch {
+        return [];
+    }
+    return [];
+};
+
+interface WhiteboardProps {
+    initialContent: string; // JSON string of WhiteboardElement[]
+    onChange: (newContentJson: string) => void;
+    onTyping: () => void;
+}
+
+export const Whiteboard: React.FC<WhiteboardProps> = ({ initialContent, onChange, onTyping }) => {
   const orientation = useOrientation();
   const isReadOnly = orientation === 'portrait';
   
@@ -38,31 +60,24 @@ export const Whiteboard: React.FC = () => {
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef<{ x: number; y: number } | null>(null);
 
-  const [elements, setElements] = useState<WhiteboardElement[]>([]);
-  const [mode, setMode] = useState<ToolMode>('draw');
+  const [elements, setElements] = useState<WhiteboardElement[]>(() => parseInitialElements(initialContent));  const [mode, setMode] = useState<ToolMode>('draw');
   const [color, setColor] = useState<string>('#000000');
 
-  // State for drawing/moving
   const [isDrawing, setIsDrawing] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [selectedElementIds, setSelectedElementIds] = useState<number[]>([]);
   const [offset, setOffset] = useState<{ x: number; y: number } | null>(null); 
-
   const [editingTextId, setEditingTextId] = useState<number | null>(null);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
-
-  // OPTIMIZATION STATES
   const [movingElements, setMovingElements] = useState<WhiteboardElement[]>([]);
   const animationFrameRef = useRef<number | null>(null);
   const lastPosRef = useRef<{ x: number; y: number } | null>(null); 
-
-  // RESIZING STATES
   const [resizeStartPos, setResizeStartPos] = useState<{ x: number; y: number } | null>(null);
   const [resizeStartElement, setResizeStartElement] = useState<WhiteboardElement | null>(null);
   const [resizeHandle, setResizeHandle] = useState<ResizeHandle | null>(null);
 
-  // --- Utility Functions ---
+  const debouncedElements = useDebounce(elements, 2000);
 
   const getMousePos = (event: MouseEvent): { x: number, y: number } => {
     const canvas = canvasRef.current;
@@ -71,47 +86,67 @@ export const Whiteboard: React.FC = () => {
     const rect = canvas.getBoundingClientRect();
     const scaleFactor = rect.width / INTERNAL_WIDTH; 
 
-    // When calculating position for element interaction, we need to subtract the pan offset.
     return {
       x: (event.clientX - rect.left) / scaleFactor - panOffset.x,
       y: (event.clientY - rect.top) / scaleFactor - panOffset.y, 
     };
   };
 
+  useEffect(() => {
+    if (JSON.stringify(parseInitialElements(initialContent)) !== JSON.stringify(debouncedElements)) {
+        
+        const newContentJson = JSON.stringify({ elements: debouncedElements });
+        onChange(newContentJson); 
+        console.log(`[Whiteboard] Saving ${debouncedElements.length} elements.`);
+    }
+  }, [debouncedElements, initialContent, onChange]);
 
 
-  const updateTextElement = useCallback((id: number, newText: string) => {
+  useEffect(() => {
+      const newElements = parseInitialElements(initialContent);
+      if (JSON.stringify(elements) !== JSON.stringify(newElements)) {
+          setElements(newElements);
+      }
+  }, [initialContent]);
+
+  const setElementsAndNotify = useCallback((newElements: WhiteboardElement[] | ((prev: WhiteboardElement[]) => WhiteboardElement[])) => {
+      setElements(newElements);
+      
+      onTyping(); 
+
+  }, [onTyping]);
+
+  
+
+
+
+   const updateTextElement = useCallback((id: number, newText: string) => {
         const ctx = getCanvasContext(canvasRef.current);
         if (!ctx) return;
 
-        setElements(prevElements =>
+        setElementsAndNotify(prevElements =>
             prevElements.map(el => {
                 if (el.id === id && el.type === 'text') {
-                    // Update text, then measure its new width
                     ctx.font = `${(el as TextElement).fontSize}px sans-serif`;
                     const textMetrics = ctx.measureText(newText);
-
-                    return {
-                        ...el,
-                        text: newText,
-                        width: textMetrics.width,
-                    } as TextElement;
+                    return { ...el, text: newText, width: textMetrics.width } as TextElement;
                 }
                 return el;
             })
         );
-    }, []);
+    }, [setElementsAndNotify]);
 
-  const handleDelete = useCallback(() => {
+
+    const handleDelete = useCallback(() => {
     if (selectedElementIds.length === 0) return;
 
-    setElements(prevElements => 
+    setElementsAndNotify(prevElements =>
       prevElements.filter(el => !selectedElementIds.includes(el.id))
     );
     setSelectedElementIds([]);
     setEditingTextId(null);
     setMode('draw');
-  }, [selectedElementIds]);
+  }, [selectedElementIds, setElementsAndNotify]);
 
 
   const handlePaste = (event: ClipboardEvent) => {
@@ -149,9 +184,9 @@ export const Whiteboard: React.FC = () => {
                         src: src,
                     };
 
-                    setElements(prev => [...prev, newImageElement]);
-                    setSelectedElementIds([id]);
-                    setMode('select');
+                       setElementsAndNotify(prev => [...prev, newImageElement]); // <-- UPDATED HERE
+                        setSelectedElementIds([id]);
+                        setMode('select');
                 };
                 img.src = src;
             };
@@ -161,7 +196,6 @@ export const Whiteboard: React.FC = () => {
     }
   };
 
-  // --- Rendering Logic (Called by rAF) ---
 
   const renderElements = useCallback(() => {
     const ctx = getCanvasContext(canvasRef.current);
@@ -169,11 +203,9 @@ export const Whiteboard: React.FC = () => {
 
     ctx.clearRect(0, 0, INTERNAL_WIDTH, INTERNAL_HEIGHT);
     
-    // Apply Pan Translation
     ctx.save();
     ctx.translate(panOffset.x, panOffset.y);
 
-    // Draw Elements (drawing logic remains the same)
     elements.forEach(element => {
       ctx.strokeStyle = element.color;
       ctx.fillStyle = element.color;
@@ -207,7 +239,6 @@ export const Whiteboard: React.FC = () => {
           break;
       }
       
-      // Draw selection/resize handles only in interactive mode
       if (!isReadOnly && isSelected && mode === 'select' && element.id !== editingTextId) {
          ctx.strokeStyle = '#007bff';
          ctx.lineWidth = 2;
@@ -234,20 +265,17 @@ export const Whiteboard: React.FC = () => {
         ctx.setLineDash([]);
     }
     
-    // Restore context (remove translation)
     ctx.restore();
 
   }, [elements, selectedElementIds, mode, editingTextId, selectionRect, panOffset, isReadOnly]); 
 
 
   useEffect(() => {
-    // Only re-render when a state change happens outside of a continuous action (move/resize)
     if (!isMoving && !isResizing && !selectionRect) {
         renderElements();
     }
   }, [elements, renderElements, selectedElementIds, editingTextId, selectionRect, isMoving, isResizing]);
 
-  // --- Keyboard & Paste Effects ---
   useEffect(() => {
       document.addEventListener('paste', handlePaste);
       const handleKeyDown = (event: KeyboardEvent) => {
@@ -273,13 +301,10 @@ export const Whiteboard: React.FC = () => {
         const canvasContainer = canvasRef.current?.parentElement;
         if (!canvasContainer) return;
 
-        // Get the actual width of the container on the screen
         const containerWidth = canvasContainer.clientWidth; 
         
-        // Calculate the scale factor (e.g., 500px / 1000px = 0.5)
         const scaleFactor = containerWidth / INTERNAL_WIDTH;
 
-        // Apply the scale factor to the container via CSS variable
         canvasContainer.style.setProperty('--scale-factor', scaleFactor.toFixed(4));
     };
 
@@ -290,11 +315,9 @@ export const Whiteboard: React.FC = () => {
   }, []);
 
 
-  // --- Event Handlers (trimmed for brevity, focusing on React-specific implementation) ---
   const handleMouseDown = (event: MouseEvent) => {    
     if (isReadOnly) {
         setIsPanning(true);
-        // Store the raw mouse client coordinates for calculating the delta
         panStartRef.current = { x: event.clientX, y: event.clientY }; 
         return; 
     }
@@ -314,13 +337,11 @@ export const Whiteboard: React.FC = () => {
         size: 5,
         points: [pos],
       };
-      setElements(prev => [...prev, newElement]);
-
+      setElementsAndNotify(prev => [...prev, newElement]); 
     } else if (mode === 'select') {
       let hitElement: WhiteboardElement | undefined;
       let hitHandle: ResizeHandle | null = null;
       
-      // Check for Resize Handle Hit first (only on selected elements)
       for (let i = elements.length - 1; i >= 0; i--) {
           const el = elements[i];
           if (selectedElementIds.includes(el.id) && el.type !== 'line') {
@@ -333,7 +354,6 @@ export const Whiteboard: React.FC = () => {
           }
       }
 
-      // Start Resizing
       if (hitElement && hitHandle) {
           setIsResizing(true);
           setResizeHandle(hitHandle);
@@ -343,8 +363,6 @@ export const Whiteboard: React.FC = () => {
           return;
       }
 
-
-      // Check for Element Hit (if no resize handle hit)
       for (let i = elements.length - 1; i >= 0; i--) {
           const el = elements[i];
           
@@ -369,11 +387,9 @@ export const Whiteboard: React.FC = () => {
           }
       } 
 
-      // Movement Setup or Selection Box Start
       if (hitElement) {
           
           let currentSelectedIds = selectedElementIds;
-
           if (isControlOrCommand) {
               currentSelectedIds = selectedElementIds.includes(hitElement.id)
                   ? selectedElementIds.filter(id => id !== hitElement.id)
@@ -393,7 +409,6 @@ export const Whiteboard: React.FC = () => {
           }
 
       } else {
-          // No hit, start a new selection box
           setSelectedElementIds([]);
           setSelectionRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
       }
@@ -467,8 +482,13 @@ export const Whiteboard: React.FC = () => {
       }
 
       lastPosRef.current = pos; 
-      if (animationFrameRef.current !== null) { cancelAnimationFrame(animationFrameRef.current); }
-      animationFrameRef.current = requestAnimationFrame(() => { renderElements(); animationFrameRef.current = null; });
+        if (animationFrameRef.current !== null) { 
+          cancelAnimationFrame(animationFrameRef.current); 
+        }      
+        animationFrameRef.current = requestAnimationFrame(() => { 
+          renderElements(); animationFrameRef.current = null; 
+        }
+      );
 
     } else if (isResizing && resizeStartElement && resizeStartPos && resizeHandle) { 
         const startEl = resizeStartElement; 
@@ -520,7 +540,6 @@ export const Whiteboard: React.FC = () => {
                 }
                 break;
         }
-        // --- End Scaling Logic ---
 
         setElements(prevElements => 
             prevElements.map(el => {
@@ -552,14 +571,13 @@ export const Whiteboard: React.FC = () => {
         if (animationFrameRef.current !== null) { cancelAnimationFrame(animationFrameRef.current); }
         animationFrameRef.current = requestAnimationFrame(() => { renderElements(); animationFrameRef.current = null; });
 
-
     } else if (selectionRect && mode === 'select') {
         setSelectionRect(prevRect => {
             if (!prevRect) return null;
             return { ...prevRect, w: pos.x - prevRect.x, h: pos.y - prevRect.y, };
         });
         
-        if (animationFrameRef.current !== null) { cancelAnimationFrame(animationFrameRef.current); }
+       if (animationFrameRef.current !== null) { cancelAnimationFrame(animationFrameRef.current); }
         animationFrameRef.current = requestAnimationFrame(() => { renderElements(); animationFrameRef.current = null; });
     
     } else if (mode === 'select' && !isMoving && !isResizing && !selectionRect) {
@@ -603,15 +621,21 @@ export const Whiteboard: React.FC = () => {
       setResizeStartPos(null);
       lastPosRef.current = null; 
 
-      if (movingElements.length > 0) {
-          setElements(prevElements => 
-              prevElements.map(el => {
+      if (isDrawing || isMoving || isResizing) {
+          onTyping(); 
+      }
+      
+      if (isMoving && movingElements.length > 0) {
+          setElements(prevElements => {
+              const finalElements = prevElements.map(el => {
                   const movedEl = movingElements.find(mEl => mEl.id === el.id);
                   return movedEl ? movedEl : el;
-              })
-          );
+              });
+              return finalElements;
+          });
           setMovingElements([]);
       }
+
 
       if (selectionRect) {
           const newlySelectedIds = elements
@@ -668,13 +692,13 @@ export const Whiteboard: React.FC = () => {
         text: textPrompt,
         fontSize: fontSize,
       };
-      setElements(prev => [...prev, newElement]);
+      setElementsAndNotify(prev => [...prev, newElement]); 
       setMode('select');
     }
   };
 
-  const cursorMap: Record<ToolMode, string> = {
-      'select': isReadOnly ? 'grab' : 'default',
+   const cursorMap: Record<ToolMode, string> = {
+      'select': isPanning ? 'grabbing' : isReadOnly ? 'grab' : 'default',
       'draw': 'crosshair',
       'text': 'default',
   };
@@ -719,7 +743,6 @@ export const Whiteboard: React.FC = () => {
           Add Text 
         </button>
 
-        {/* Delete Button */}
         <button
           onClick={handleDelete} 
           disabled={selectedElementIds.length === 0} 
@@ -735,7 +758,6 @@ export const Whiteboard: React.FC = () => {
           Delete Selected 
         </button>
         
-        {/* Color Picker and Clear Button */}
         <div>
           <label htmlFor="color-picker" style={{ marginRight: '5px' }}>Color:</label>
           <input
@@ -760,9 +782,7 @@ export const Whiteboard: React.FC = () => {
       )}
 
 
-
-      {/* Canvas */}
-     <div className="canvas-container">
+       <div className="canvas-container">
           <canvas
             ref={canvasRef}
             width={INTERNAL_WIDTH}
@@ -780,7 +800,7 @@ export const Whiteboard: React.FC = () => {
       </div>
 
       {/* EditLayer is only active in interactive mode */}
-      {!isReadOnly && editingTextId !== null && editingElement && editingElement.type === 'text' && (
+     {!isReadOnly && editingTextId !== null && editingElement && editingElement.type === 'text' && (
           <EditLayer 
             element={editingElement as TextElement}
             canvasRef={canvasRef as React.RefObject<HTMLCanvasElement | null>}
