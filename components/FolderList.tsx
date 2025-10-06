@@ -34,12 +34,15 @@ const FolderList: React.FC<FolderListProps> = (
     }
   };
 
+  const sortedFolders = folders.slice().sort((a, b) => a.name.localeCompare(b.name));
+
+
   return (
     <div className="space-y-1">
-      {folders.length === 0 ? (
+      {sortedFolders.length === 0 ? (
         <p className="text-gray-500 italic p-2">No folders found in this location.</p>
       ) : (
-        folders.map((folder) => (
+        sortedFolders.map((folder) => (
           <div
             key={folder.id}
             className="flex justify-between items-center p-3 rounded-lg cursor-pointer transition-colors duration-150 hover:bg-gray-700/50"

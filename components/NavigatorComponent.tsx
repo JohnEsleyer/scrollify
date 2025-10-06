@@ -19,7 +19,6 @@ const entityConverter = (snapshot: DocumentSnapshot<DocumentData>): Folder | Not
     const data = snapshot.data();
     if (!data) throw new Error("Document data not found.");
 
-    // Convert Firestore Timestamps to JS numbers
     const createdAt = (data.createdAt as Timestamp)?.toMillis() || Date.now();
     const updatedAt = (data.updatedAt as Timestamp)?.toMillis() || Date.now();
 
@@ -157,8 +156,7 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
     }
 
     try {
-      // In a production app, you would use a Cloud Function to recursively delete children.
-      // Here, we just delete the parent document.
+     
       const folderRef = doc(db, 'entities', folderId);
       await deleteDoc(folderRef);
     } catch (error) {
@@ -183,7 +181,7 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
       });
-      onNoteSelect(docRef.id); // Select the new note using its new Firestore ID
+      onNoteSelect(docRef.id);
     } catch (error) {
       console.error("Error creating note: ", error);
       alert("Failed to create note.");

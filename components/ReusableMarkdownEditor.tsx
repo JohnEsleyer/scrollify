@@ -80,13 +80,23 @@ interface StateChangeReporterProps {
 
 function StateChangeReporter({ onLexicalUpdate }: StateChangeReporterProps) {
     const [editor] = useLexicalComposerContext();
-    React.useEffect(() => {
-        if (!onLexicalUpdate) return;
+    const isMounted = React.useRef(true);
 
-        return editor.registerUpdateListener(({ editorState }) => { 
+     React.useEffect(() => {
+        isMounted.current = true;
+        if (!onLexicalUpdate) return;
+        
+        const unregisterListener = editor.registerUpdateListener(({ editorState }) => { 
+            if (!isMounted.current) return; 
+            
             const jsonString = JSON.stringify(editorState.toJSON());
             onLexicalUpdate(jsonString); 
         });
+        
+        return () => {
+            isMounted.current = false; 
+            unregisterListener();
+        };
     }, [editor, onLexicalUpdate]);
     return null;
 }
@@ -159,8 +169,6 @@ export default function ReusableMarkdownEditor({ content, onChange, onTyping}: R
 
     const [lastContentJson, setLastContentJson] = React.useState<string>(validatedContent);
     const debouncedContentJson = useDebounce(lastContentJson, 1000); 
-
-
 
     const initialConfig = React.useMemo(() => {
         console.log("[Editor Config] Creating new initialConfig. This triggers full Lexical re-init.");

@@ -9,41 +9,6 @@ import {
     AppWindow
 } from 'lucide-react';
 
-const mockNotes: Note[] = [
-  { 
-    id: 'n1', 
-    name: 'Quick Todo List', 
-    parentId: 'f1', 
-    createdAt: Date.now(), 
-    updatedAt: Date.now(), 
-    noteType: 'markdown', 
-    type: 'note', 
-    preview: 'Use this for a quick dump of ideas...',
-    content: '{"root":{"children":[{"children":[{"detail":0,"format":0,"mode":"normal","text":"Mock Markdown Content.","type":"text","version":1}],"direction":"ltr","format":"","indent":0,"type":"paragraph","version":1}],"direction":"ltr","format":"","indent":0,"type":"root","version":1}}', 
-  },
-  { 
-    id: 'n2', 
-    name: 'Web Component Demo', 
-    parentId: 'f1', 
-    createdAt: Date.now(), 
-    updatedAt: Date.now(), 
-    noteType: 'webview', 
-    type: 'note', 
-    preview: 'A playground for my new CSS grid layout.',
-    content: '/* Mock Webview Code */', 
-  },
-  { 
-    id: 'n3', 
-    name: 'Design Sketch v1', 
-    parentId: 'f1', 
-    createdAt: Date.now(), 
-    updatedAt: Date.now(), 
-    noteType: 'canvas', 
-    type: 'note', 
-    preview: 'Initial wireframe drawing for the app UI.',
-    content: '{"shapes":[]}', 
-  },
-];
 
 const getNoteIcon = (noteType: NoteType) => {
     switch (noteType) {
@@ -91,12 +56,14 @@ const NoteList: React.FC<NoteListProps> = (
     }
   };
 
+    const sortedNotes = notes.slice().sort((a, b) => a.name.localeCompare(b.name));
+
   return (
     <div className="space-y-1">
-      {notes.length === 0 ? (
+      {sortedNotes.length === 0 ? (
         <p className="text-gray-500 italic p-2">No notes found in this folder.</p>
       ) : (
-        notes.map((note) => (
+        sortedNotes.map((note) => (
           <div
             key={note.id}
             className={`
@@ -119,7 +86,6 @@ const NoteList: React.FC<NoteListProps> = (
                 </div>
               </div>
             
-              {/* CRUD Actions */}
               <div className="flex space-x-2 flex-shrink-0 mt-1">
                 <button
                   onClick={(e) => handleUpdate(e, note.id)}

@@ -322,7 +322,6 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
 
 
   const sidebarItems: SidebarItem[] = useMemo(() => {
-      // Map the fetched sideNotes data to the SidebarWrapper's expected SidebarItem structure
       return sideNotes.map(note => ({
           id: note.id,
           label: note.name,
@@ -334,6 +333,16 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
   const renderNoteContent = () => {
     if (!noteData) return null;
     
+    const INITIAL_EMPTY_CONTENT = '{"root":{"children":[],"direction":"ltr","format":"","indent":0,"type":"root","version":1}}';
+
+    const isUninitialized = 
+    noteData.noteType === 'markdown' && 
+    noteData.content === INITIAL_EMPTY_CONTENT;
+
+    if (isUninitialized) {
+      return null;
+  }
+  
     switch (noteData.noteType) {
       case 'markdown':
          return (
@@ -355,7 +364,7 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
         );
       case 'canvas':
         return (
-             <Whiteboard // <-- USE Whiteboard
+             <Whiteboard 
                 key={noteData.id}
                 initialContent={noteData.content} 
                 onChange={handleContentChange}

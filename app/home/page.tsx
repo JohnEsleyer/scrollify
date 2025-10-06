@@ -1,7 +1,5 @@
-// app/home/page.tsx
 
-'use client'; // Client Component for hooks and Firebase
-
+'use client'; 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { checkAuthState } from '@/lib/firebase';
@@ -18,13 +16,11 @@ const HomePage: React.FC = () => {
   const [mobileView, setMobileView] = useState<ViewState>('navigator');
 
 
-  // --- AUTH CHECK ---
   useEffect(() => {
     const unsubscribe = checkAuthState((user) => {
       if (user) {
         setIsAuth(true);
       } else {
-        // Redirect to login page if unauthenticated
         router.replace('/'); 
       }
       setLoading(false);
@@ -41,7 +37,7 @@ const HomePage: React.FC = () => {
     );
   }
 
-  // --- HOME PAGE LOGIC (Your Provided Component) ---
+
 
   const handleNoteSelect = (noteId: string) => {
     setActiveNoteId(noteId);
