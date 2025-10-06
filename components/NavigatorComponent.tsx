@@ -4,7 +4,7 @@ import NoteList from './NoteList';
 import { ChevronLeft, Plus } from 'lucide-react';
 import { Entity, Folder, Note } from '@/lib/types'; 
 import { db } from '@/lib/firebase';
-import { collection, query, where, onSnapshot, DocumentData, DocumentReference, DocumentSnapshot, Timestamp, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore'; 
+import { collection, query, where, onSnapshot, DocumentData, DocumentReference, DocumentSnapshot, Timestamp, addDoc, updateDoc, doc, deleteDoc, getDocs, writeBatch } from 'firebase/firestore'; 
 
 interface NavData {
     [parentId: string]: {
@@ -149,21 +149,70 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
     }
   };
 
-  // DELETE Folder
+  const deleteFolderContents = async (parentId: string) => {
+    // Create a query for all immediate children
+    const childrenQuery = query(
+        collection(db, 'entities'),
+        where('parentId', '==', parentId)
+    );
+    const childrenSnapshot = await getDocs(childrenQuery);
+
+    if (childrenSnapshot.empty) {
+        return; 
+    }
+
+    // Prepare a batch for deletions
+    const batch = writeBatch(db);
+    const recursiveDeletePromises: Promise<void>[] = []; 
+
+    childrenSnapshot.docs.forEach(childDoc => {
+        const childData = childDoc.data();
+        
+        // Add the current child document to the batch for deletion
+        batch.delete(childDoc.ref);
+
+        //  If the child is a folder, start a recursive delete for its contents
+        if (childData.type === 'folder') {
+            // This is the recursive call for the next level down
+            recursiveDeletePromises.push(deleteFolderContents(childDoc.id));
+        }
+    });
+
+    // Wait for all nested deletions (sub-folders) to complete
+    await Promise.all(recursiveDeletePromises);
+
+    // Commit the current batch of deletions (up to 500 documents)
+    await batch.commit();
+    
+    console.log(`[Batch Delete] Completed batch for parent: ${parentId}. Deleted ${childrenSnapshot.size} items.`);
+};
+
+
+
   const handleDeleteFolder = async (folderId: string) => {
-    if (!window.confirm("WARNING: Deleting a folder is permanent. In a full implementation, all contents would be deleted too.")) {
+    if (!window.confirm("WARNING: Deleting this folder is permanent. All contents (subfolders and notes) will be deleted.")) {
         return;
     }
 
     try {
-     
-      const folderRef = doc(db, 'entities', folderId);
-      await deleteDoc(folderRef);
+        // Recursively delete ALL contents (notes and sub-folders)
+        await deleteFolderContents(folderId); 
+
+        // Finally, delete the parent folder itself
+        const folderRef = doc(db, 'entities', folderId);
+        await deleteDoc(folderRef); 
+
+        // If the current path was inside the deleted folder, navigate back up
+        if (currentPath.includes(folderId)) {
+             // Slice path until the deleted ID is removed
+             setCurrentPath(prevPath => prevPath.slice(0, prevPath.indexOf(folderId)));
+        }
+
     } catch (error) {
-      console.error("Error deleting folder: ", error);
-      alert("Failed to delete folder.");
+        console.error("Error deleting folder and contents: ", error);
+        alert("Failed to delete folder.");
     }
-  };
+};
 
   // CREATE Note
   const handleCreateNote = async () => {
