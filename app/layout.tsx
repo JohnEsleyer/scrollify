@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Scrollify',
-  description: 'A Next.js, TypeScript, and Firebase note-taking app.',
+  description: '',
 };
 
 export default function RootLayout({

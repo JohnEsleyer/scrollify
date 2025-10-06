@@ -10,7 +10,6 @@ import { MarkdownShortcutPlugin } from '@lexical/react/LexicalMarkdownShortcutPl
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'; 
 
 import { 
-    ElementTransformer, 
     Transformer, 
     TRANSFORMERS as CORE_TRANSFORMERS,
     CODE as CODE_TRANSFORMER,
@@ -20,8 +19,7 @@ import {
 import { HeadingNode, QuoteNode } from '@lexical/rich-text';
 import { ListItemNode, ListNode } from '@lexical/list';
 import { 
-    ParagraphNode, TextNode, EditorState, LexicalEditor, 
-    ElementNode, LexicalNode, $isElementNode
+    ParagraphNode, TextNode, LexicalEditor, 
 } from 'lexical'; 
 import { LinkNode } from '@lexical/link'; 
 import { $createImageNode, $isImageNode, ImageNode} from '@/nodes/ImageNode'; 
@@ -148,25 +146,11 @@ const createInitialConfig = (contentJson: string): InitialConfigType => ({
 interface ReusableEditorProps {
     content?: string;
     onChange?: (newContentJson: string) => void; 
+    onTyping: () => void;
 }
 
-const SavingIndicator = ({ isSaving }: { isSaving: boolean }) => {
-    return (
-        <div className="absolute top-0 right-0 p-2 text-xs font-semibold">
-            {isSaving ? (
-                <span className="text-yellow-400 animate-pulse">Saving...</span>
-            ) : (
-                <span className="text-green-500">Saved</span>
-            )}
-        </div>
-    );
-};
+export default function ReusableMarkdownEditor({ content, onChange, onTyping}: ReusableEditorProps) {
 
-
-
-export default function ReusableMarkdownEditor({ content, onChange }: ReusableEditorProps) {
-    const [isSaving, setIsSaving] = React.useState(false);
-    
     const validatedContent = React.useMemo(() => {
         const result = (content && isValidJsonString(content)) ? content : EMPTY_EDITOR_STATE;
         console.log(`[Editor Validation] Validated content determined. Used Fallback: ${result === EMPTY_EDITOR_STATE}`);
@@ -174,7 +158,7 @@ export default function ReusableMarkdownEditor({ content, onChange }: ReusableEd
     }, [content]);
 
     const [lastContentJson, setLastContentJson] = React.useState<string>(validatedContent);
-    const debouncedContentJson = useDebounce(lastContentJson, 750); // Debounce for 750ms
+    const debouncedContentJson = useDebounce(lastContentJson, 1000); 
 
 
 
@@ -184,25 +168,21 @@ export default function ReusableMarkdownEditor({ content, onChange }: ReusableEd
     }, [validatedContent]);
  
      const handleLexicalUpdate = React.useCallback((jsonString: string) => {
-        // We only update the local state which is debounced.
         setLastContentJson(jsonString);
-        setIsSaving(true); 
+        onTyping(); 
+    }, [onTyping]); 
 
-    }, []); 
 
         useEffect(() => {
         console.log(`[Editor Mount/Update] Incoming 'content' prop changed (Length: ${content?.length || 0}):`, content ? content.substring(0, 50) + '...' : 'undefined/null');
     }, [content]);
 
-    useEffect(() => {
+   useEffect(() => {
         if (!onChange) return;
         
-        // This check is good to prevent infinite loops if the parent updates
-        // the content prop immediately after the debounced save.
         if (debouncedContentJson !== content) {
             console.log("[DEBOUNCE SAVE] Pause detected. Triggering external onChange(save).");
             onChange(debouncedContentJson);
-            setIsSaving(false); 
         }
     }, [debouncedContentJson, onChange, content]); 
     
@@ -210,7 +190,6 @@ export default function ReusableMarkdownEditor({ content, onChange }: ReusableEd
      <LexicalComposer initialConfig={initialConfig}>
             
             <div className="editor-container p-4">
-                 <SavingIndicator isSaving={isSaving} />
                 <RichTextPlugin
                     contentEditable={<ContentEditable className="content-editable min-h-[150px] outline-none" />}
                     placeholder={<div className="placeholder text-gray-400">Start typing Markdown...</div>}
@@ -223,7 +202,8 @@ export default function ReusableMarkdownEditor({ content, onChange }: ReusableEd
                 
                 <HighlightPlugin /> 
                 
-                <StateChangeReporter onLexicalUpdate={handleLexicalUpdate} />                                             </div>
+                <StateChangeReporter onLexicalUpdate={handleLexicalUpdate} />                                             
+                </div>
         </LexicalComposer>
     );
 }

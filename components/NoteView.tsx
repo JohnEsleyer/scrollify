@@ -2,8 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { SidebarWrapper } from './SidebarWrapper';
 import ReusableMarkdownEditor from './ReusableMarkdownEditor';
 import CodeEditorWebview from './CodeEditorWebview';
-import { Whiteboard } from './whiteboard/Whiteboard';
-import { SidebarItem, Note, NoteType, SideNote } from '@/lib/types'; // Assume SideNote type is available
+import { SidebarItem, Note, NoteType, SideNote } from '@/lib/types'; 
 import { NoteTypeSelector } from './NoteTypeSelector'; 
 
 import { db } from '@/lib/firebase'; 
@@ -11,7 +10,27 @@ import {
     doc, getDoc, updateDoc, Timestamp, DocumentSnapshot, 
     collection, query, where, onSnapshot, addDoc, deleteDoc 
 } from 'firebase/firestore'; 
+import { SideNoteTypeSelector } from './SideNoteTypeSelector'; 
 
+
+
+const DEFAULT_WEBVIEW_CONTENT = 
+`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <style>
+        .text-red { color: red; font-family: sans-serif; }
+    </style>
+</head>
+<body>
+    <h1>Hello World!</h1>
+    <p class="text-red">This is a simple demo.</p>
+    <script>
+        console.log("JavaScript executed!");
+        // alert("Script loaded!"); // Commented out to prevent annoying alerts
+    </script>
+</body>
+</html>`;
 
 interface CanvasComponentProps {
     initialData: string;
@@ -28,7 +47,7 @@ const getInitialContent = (type: NoteType): string => {
         case 'markdown':
             return '{"root":{"children":[{"children":[{"detail":0,"format":0,"mode":"normal","text":"Start writing...","type":"text","version":1}],"direction":".","format":"","indent":0,"type":"paragraph","version":1}],"direction":".","format":"","indent":0,"type":"root","version":1}}';
         case 'webview':
-            return '// HTML/CSS/JS code here';
+            return DEFAULT_WEBVIEW_CONTENT;
         case 'canvas':
             return '{"shapes":[]}';
         default:
@@ -53,13 +72,32 @@ interface NoteViewProps {
 }
 
 
+const SavingIndicator = ({ isSaving }: { isSaving: boolean }) => {
+    return (
+        <div className="absolute top-2 right-4 p-2 text-xs font-semibold z-10">
+            {isSaving ? (
+                <span className="text-yellow-400 bg-gray-900 px-2 py-1 rounded-md animate-pulse shadow-lg">Saving...</span>
+            ) : (
+                <span className="text-green-500 bg-gray-900 px-2 py-1 rounded-md shadow-lg">Saved</span>
+            )}
+        </div>
+    );
+};
+
+
 const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
   const [noteData, setNoteData] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
   const [showTypeSelector, setShowTypeSelector] = useState(false);
-  
+   const [isSaving, setIsSaving] = useState(false);
+  const [showSideNoteTypeSelector, setShowSideNoteTypeSelector] = useState(false);
   const [sideNotes, setSideNotes] = useState<SideNote[]>([]);
 
+  const handleStartTyping = useCallback(() => {
+      if (!isSaving) {
+          setIsSaving(true);
+      }
+  }, [isSaving]);
 
   useEffect(() => {
     if (!noteId) return;
@@ -144,7 +182,6 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
             updatedAt: Timestamp.now(),
         });
 
-        // Update local state and close modal
         setNoteData(prev => prev ? { ...prev, noteType: type, content: initialContent } : null);
         setShowTypeSelector(false);
     } catch (error) {
@@ -153,7 +190,7 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
     }
   };
 
-  const handleContentChange = useCallback(async (newContentJson: string) => {
+   const handleContentChange = useCallback(async (newContentJson: string) => {
     if (!noteId) return;
     
     setNoteData(prev => prev ? { ...prev, content: newContentJson, updatedAt: Date.now() } : null);
@@ -164,13 +201,15 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
             content: newContentJson,
             updatedAt: Timestamp.now(),
         });
+        
+        setIsSaving(false); 
         console.log(`[Firestore] Saved main note content: ${noteId}`);
         
     } catch (error) {
         console.error("Failed to save main note content:", error);
+        setIsSaving(false); 
     }
   }, [noteId]);
-
 
   const handleSideNoteContentChange = useCallback(async (sideNoteId: string, newContentJson: string) => {
     setSideNotes(prevNotes => prevNotes.map(n => 
@@ -189,31 +228,43 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
     }
   }, []);
 
-  // CREATE Side Note
-  const handleCreateSideNote = async () => {
+
+  const handleCreateSideNote = () => {
+    setShowSideNoteTypeSelector(true);
+  };
+
+  const finalizeCreateSideNote = async (noteType: NoteType) => {
     if (!noteId) return;
     
     const noteName = prompt('Enter side note title:', `New Side Note ${sideNotes.length + 1}`);
-    if (!noteName) return;
+    if (!noteName) {
+        setShowSideNoteTypeSelector(false); 
+        return;
+    }
 
+    const initialContent = getInitialContent(noteType);
+    
     try {
       await addDoc(collection(db, 'entities'), {
         name: noteName,
         parentId: noteId, 
         type: 'side_note',
-        noteType: 'markdown', 
-        content: getInitialContent('markdown'), 
+        noteType: noteType, 
+        content: initialContent, 
         preview: 'Side note details...',
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
       });
+
+      setShowSideNoteTypeSelector(false);
     } catch (error) {
       console.error("Error creating side note: ", error);
       alert("Failed to create side note.");
+      setShowSideNoteTypeSelector(false); 
     }
   };
 
-  // UPDATE Side Note (Rename)
+
   const handleUpdateSideNote = async (sideNoteId: string, newLabel: string) => {
     try {
       const sideNoteRef = doc(db, 'entities', sideNoteId);
@@ -221,19 +272,16 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
         name: newLabel,
         updatedAt: Timestamp.now(),
       });
-      // Listener handles state update.
     } catch (error) {
       console.error("Error updating side note: ", error);
       alert("Failed to rename side note.");
     }
   };
   
-  // DELETE Side Note
   const handleDeleteSideNote = async (sideNoteId: string) => {
     try {
       const sideNoteRef = doc(db, 'entities', sideNoteId);
       await deleteDoc(sideNoteRef);
-      // Listener handles state update.
     } catch (error) {
       console.error("Error deleting side note: ", error);
       alert("Failed to delete side note.");
@@ -241,7 +289,6 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
   };
   
   // Side Note Rendering Mappers (Memoized) --
-  
   const mapSideNoteToComponent = useCallback((sideNote: SideNote) => {
       const onChangeHandler = (content: string) => handleSideNoteContentChange(sideNote.id, content);
       
@@ -252,6 +299,7 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
                       key={sideNote.id}
                       content={sideNote.content} 
                       onChange={onChangeHandler} 
+                      onTyping={handleStartTyping} 
                   />
               );
           case 'webview':
@@ -260,10 +308,10 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
                       key={sideNote.id}
                       initialContent={sideNote.content} 
                       onChange={onChangeHandler} 
+                      onTyping={handleStartTyping} 
                   />
               );
           case 'canvas':
-              // Canvas is a placeholder, so no onChange is implemented here
               return <CanvasComponent key={sideNote.id} initialData={sideNote.content} />; 
           default:
               return <div>Unsupported side note type: {sideNote.noteType}.</div>;
@@ -284,14 +332,14 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
   const renderNoteContent = () => {
     if (!noteData) return null;
     
-    // Only Markdown and Webview get the debounced onChange handler
     switch (noteData.noteType) {
       case 'markdown':
          return (
             <ReusableMarkdownEditor 
                 key={noteData.id}
                 content={noteData.content} 
-                onChange={handleContentChange} 
+                onChange={handleContentChange}
+                onTyping={handleStartTyping}
             />
         );
       case 'webview':
@@ -299,7 +347,8 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
             <CodeEditorWebview 
                 key={noteData.id}
                 initialContent={noteData.content} 
-                onChange={handleContentChange} 
+                onChange={handleContentChange}
+                onTyping={handleStartTyping} 
             />
         );
       case 'canvas':
@@ -326,6 +375,13 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
               onClose={() => setShowTypeSelector(false)}
           />
       )}
+
+      {showSideNoteTypeSelector && (
+          <SideNoteTypeSelector
+              onSelect={finalizeCreateSideNote} 
+              onClose={() => setShowSideNoteTypeSelector(false)}
+          />
+      )}
       
       <div className="lg:hidden p-4 bg-gray-900 border-b border-gray-700">
         <button 
@@ -337,7 +393,6 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
         <h1 className="text-xl font-bold text-white mt-2">{noteData.name}</h1>
       </div>
       
-      {/* Main View */}
       <SidebarWrapper 
         items={sidebarItems}
         defaultItemId={defaultSidebarId}
@@ -345,7 +400,8 @@ const NoteView: React.FC<NoteViewProps> = ({ noteId, onBack }) => {
         onUpdate={handleUpdateSideNote}
         onDelete={handleDeleteSideNote}
       >
-        <div className="p-4 flex flex-col h-full">
+        <div className="p-4 flex flex-col h-full relative">
+          <SavingIndicator isSaving={isSaving} />
           <h1 className="hidden lg:block text-2xl font-extrabold text-white mb-4 border-b pb-2 border-gray-700">
             {noteData.name}
           </h1>
