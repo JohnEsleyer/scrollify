@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Note, NoteType } from '@/lib/types';
 import { 
@@ -28,9 +27,11 @@ interface NoteListProps {
   notes: Note[]; 
   onNoteClick: (noteId: string) => void;
   activeNoteId: string | null;
-  onCreateNote?: () => void;
   onUpdateNote?: (noteId: string) => void;
-  onDeleteNote?: (noteId: string) => void;
+  onDeleteNote?: (noteId: string) => void; 
+  selectedEntityIds: string[];
+  toggleEntitySelection: (entityId: string) => void;
+  
 }
 
 const NoteList: React.FC<NoteListProps> = (
@@ -39,7 +40,9 @@ const NoteList: React.FC<NoteListProps> = (
         onNoteClick, 
         activeNoteId, 
         onUpdateNote, 
-        onDeleteNote 
+        onDeleteNote,
+        selectedEntityIds,
+        toggleEntitySelection 
     }) => {
         
   const handleUpdate = (e: React.MouseEvent, noteId: string) => {
@@ -48,12 +51,10 @@ const NoteList: React.FC<NoteListProps> = (
     console.log(`Update note: ${noteId}`);
   };
 
-  const handleDelete = (e: React.MouseEvent, noteId: string) => {
+   const handleDelete = (e: React.MouseEvent, noteId: string) => {
     e.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this note?')) {
-        onDeleteNote?.(noteId);
-        console.log(`Delete note: ${noteId}`);
-    }
+    onDeleteNote?.(noteId);
+    console.log(`Triggering delete for: ${noteId}`);
   };
 
     const sortedNotes = notes.slice().sort((a, b) => a.name.localeCompare(b.name));
@@ -68,14 +69,33 @@ const NoteList: React.FC<NoteListProps> = (
             key={note.id}
             className={`
               p-3 rounded-lg cursor-pointer transition-colors duration-150 border-l-4
+              flex items-start space-x-3 // 👈 Alignment for checkbox and content
               ${activeNoteId === note.id
                 ? 'bg-blue-600/50 border-blue-400'
                 : 'hover:bg-gray-700/50 border-transparent'
               }
             `}
-            onClick={() => onNoteClick(note.id)}
           >
-            <div className="flex justify-between items-start">
+
+              <input
+                type="checkbox"
+                checked={selectedEntityIds.includes(note.id)}
+                onChange={(e) => {
+                    e.stopPropagation();
+                    toggleEntitySelection(note.id);
+                }}
+                className="
+                    mt-1 // Adjust vertical position slightly due to items-start
+                    h-5 w-5 
+                    text-blue-500 bg-gray-700 border-gray-500 
+                    rounded focus:ring-blue-500 cursor-pointer flex-shrink-0
+                "
+              />
+
+             <div 
+                className="flex justify-between items-start flex-grow min-w-0"
+                onClick={() => onNoteClick(note.id)} 
+            >
               <div className="flex items-start space-x-3 min-w-0">
                 {getNoteIcon(note.noteType)}
                 <div className="min-w-0">

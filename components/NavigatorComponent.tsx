@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import FolderList from '@/components/FolderList';
 import NoteList from './NoteList';
 import { ChevronLeft, Plus } from 'lucide-react';
@@ -82,22 +82,18 @@ interface NavigatorProps {
 const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNoteId }) => {
   const [activeTab, setActiveTab] = useState<'folders' | 'notes'>('notes');
   const [currentPath, setCurrentPath] = useState<string[]>([]); 
-  const [navData, setNavData] = useState<NavData>(initialMockData);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
+  const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
+  const [isMultiSelecting, setIsMultiSelecting] = useState(false);
+  const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([]);
+
   const currentFolderId = currentPath.length > 0 
     ? currentPath[currentPath.length - 1] 
     : 'root';
 
-  
-  const dataFallback = { folders: [], notes: [], parentFolderId: 'root' };
-  
-  const currentData = navData[currentFolderId] || dataFallback;  
-
-   
-  // Navigation and UI logic
   const handleFolderClick = (folderId: string) => {
     setCurrentPath(prevPath => [...prevPath, folderId]);
   };
@@ -107,7 +103,123 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
       setCurrentPath(prevPath => prevPath.slice(0, -1));
     }
   };
+
+  const toggleEntitySelection = useCallback((entityId: string) => {
+    setSelectedEntityIds(prev =>
+        prev.includes(entityId)
+            ? prev.filter(id => id !== entityId)
+            : [...prev, entityId]
+    );
+}, []);
+
+  const handleMultiDeleteIfSelected = async (singleItemIdToDelete: string) => {
+    
+    // Determine the final set of IDs to delete
+    const itemsToDelete = selectedEntityIds.length > 0 
+        ? selectedEntityIds 
+        : [singleItemIdToDelete]; // Fallback to deleting the single item if no boxes are checked
+    
+    if (itemsToDelete.length === 0) return;
+
+    const isBulkDelete = itemsToDelete.length > 1 || selectedEntityIds.length > 0;
+    
+    const confirmationMessage = isBulkDelete
+        ? `Are you sure you want to delete ${itemsToDelete.length} items and all their contents?`
+        : `Are you sure you want to delete this item and all its contents?`;
+
+    if (!window.confirm(confirmationMessage)) {
+        return;
+    }
+
+    try {
+        const cleanupPromises: Promise<void>[] = [];
+        const rootBatch = writeBatch(db);
+
+        // Perform Recursive Cleanup for all selected items ---
+        itemsToDelete.forEach(id => cleanupPromises.push(deleteFolderContents(id)));
+        await Promise.all(cleanupPromises);
+        
+        itemsToDelete.forEach(id => {
+            rootBatch.delete(doc(db, 'entities', id));
+        });
+
+        await rootBatch.commit();
+
+        setSelectedEntityIds([]);
+        console.log(`Successfully deleted ${itemsToDelete.length} entities.`);
+
+    } catch (error) {
+        console.error("Error during delete operation:", error);
+        alert("Failed to complete the delete operation.");
+    }
+};
+
+
+
   
+  const toggleFolderSelection = (folderId: string) => {
+    setSelectedFolderIds(prev =>
+        prev.includes(folderId)
+            ? prev.filter(id => id !== folderId)
+            : [...prev, folderId]
+      );
+  };
+
+
+  const toggleNoteSelection = (noteId: string) => {
+    setSelectedNoteIds(prev =>
+        prev.includes(noteId)
+            ? prev.filter(id => id !== noteId)
+            : [...prev, noteId]
+    );
+};
+
+const handleMultiDelete = async () => {
+    const allItemsToDelete = [...selectedFolderIds, ...selectedNoteIds];
+
+    if (allItemsToDelete.length === 0) return;
+
+    if (!window.confirm(`Are you sure you want to delete ${allItemsToDelete.length} selected items and all their contents? This cannot be undone.`)) {
+        return;
+    }
+
+    try {
+
+        const cleanupPromises: Promise<void>[] = [];
+
+        // Cleanup contents for selected folders (recursively deletes notes/sub-folders/side-notes)
+        selectedFolderIds.forEach(id => cleanupPromises.push(deleteFolderContents(id)));
+        
+        // Cleanup contents for selected notes (recursively deletes side notes)
+        selectedNoteIds.forEach(id => cleanupPromises.push(deleteFolderContents(id)));
+
+        await Promise.all(cleanupPromises);
+        
+        
+        //Delete the Root Documents in a single Firestore Batch ---
+        const batch = writeBatch(db);
+        allItemsToDelete.forEach(id => {
+            const docRef = doc(db, 'entities', id);
+            batch.delete(docRef);
+        });
+
+        await batch.commit();
+
+        // Reset State ---
+        setSelectedFolderIds([]);
+        setSelectedNoteIds([]);
+        setIsMultiSelecting(false);
+        
+        console.log(`Successfully deleted ${allItemsToDelete.length} items and their contents.`);
+
+    } catch (error) {
+        console.error("Error during multi-delete operation:", error);
+        alert("Failed to complete the multi-delete operation.");
+    }
+};
+
+
+
 
   // CREATE Folder
   const handleCreateFolder = async () => {
@@ -179,29 +291,8 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
 
 
 
-  const handleDeleteFolder = async (folderId: string) => {
-    if (!window.confirm("WARNING: Deleting this folder is permanent. All contents (subfolders and notes) will be deleted.")) {
-        return;
-    }
-
-    try {
-        // Recursively delete ALL contents (notes and sub-folders)
-        await deleteFolderContents(folderId); 
-
-        // Finally, delete the parent folder itself
-        const folderRef = doc(db, 'entities', folderId);
-        await deleteDoc(folderRef); 
-
-        // If the current path was inside the deleted folder, navigate back up
-        if (currentPath.includes(folderId)) {
-             // Slice path until the deleted ID is removed
-             setCurrentPath(prevPath => prevPath.slice(0, prevPath.indexOf(folderId)));
-        }
-
-    } catch (error) {
-        console.error("Error deleting folder and contents: ", error);
-        alert("Failed to delete folder.");
-    }
+ const handleDeleteFolder = (folderId: string) => {
+    handleMultiDeleteIfSelected(folderId); 
 };
 
   // CREATE Note
@@ -248,28 +339,9 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
   };
 
   // DELETE Note
-  const handleDeleteNote = async (noteId: string) => {
-    if (!window.confirm("Are you sure you want to delete this note and all its associated side notes?")) {
-        return;
-    }
+  const handleDeleteNote = (noteId: string) => {
 
-    try {
-        // Delete all children (side notes) of the main note.
-        await deleteFolderContents(noteId); 
-
-        // delete the main note itself.
-        const noteRef = doc(db, 'entities', noteId);
-        await deleteDoc(noteRef); 
-
-        console.log(`Successfully deleted Note ${noteId} and all side notes.`);
-        
-        // Handle navigation after deletion (e.g., set active note to null)
-
-
-    } catch (error) {
-        console.error("Error deleting note and side notes: ", error);
-        alert("Failed to delete note.");
-    }
+    handleMultiDeleteIfSelected(noteId); 
 };
 
 
@@ -358,6 +430,9 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
           Notes
         </button>
       </div>
+      <div className="flex space-x-2 p-2">
+
+</div>
       
       {/* Content */}
       <div className="flex-grow overflow-y-auto">
@@ -368,6 +443,8 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
             onFolderClick={handleFolderClick}
             onUpdateFolder={handleUpdateFolder} 
             onDeleteFolder={handleDeleteFolder}
+            selectedEntityIds={selectedEntityIds}
+            toggleEntitySelection={toggleEntitySelection}
           />
         )}
         {!isLoading && activeTab === 'notes' && (
@@ -377,6 +454,8 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
             activeNoteId={activeNoteId}
             onUpdateNote={handleUpdateNote} 
             onDeleteNote={handleDeleteNote}
+            selectedEntityIds={selectedEntityIds}
+            toggleEntitySelection={toggleEntitySelection} 
           />
         )}
       </div>
