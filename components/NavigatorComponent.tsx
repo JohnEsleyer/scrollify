@@ -149,8 +149,7 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
     }
   };
 
-  const deleteFolderContents = async (parentId: string) => {
-    // Create a query for all immediate children
+  const deleteFolderContents = async (parentId: string): Promise<void> => {
     const childrenQuery = query(
         collection(db, 'entities'),
         where('parentId', '==', parentId)
@@ -158,33 +157,24 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
     const childrenSnapshot = await getDocs(childrenQuery);
 
     if (childrenSnapshot.empty) {
-        return; 
+        return;
     }
 
-    // Prepare a batch for deletions
     const batch = writeBatch(db);
     const recursiveDeletePromises: Promise<void>[] = []; 
 
     childrenSnapshot.docs.forEach(childDoc => {
         const childData = childDoc.data();
         
-        // Add the current child document to the batch for deletion
         batch.delete(childDoc.ref);
 
-        //  If the child is a folder, start a recursive delete for its contents
-        if (childData.type === 'folder') {
-            // This is the recursive call for the next level down
+        if (childData.type === 'folder' || childData.type === 'note') { 
             recursiveDeletePromises.push(deleteFolderContents(childDoc.id));
         }
     });
 
-    // Wait for all nested deletions (sub-folders) to complete
     await Promise.all(recursiveDeletePromises);
-
-    // Commit the current batch of deletions (up to 500 documents)
     await batch.commit();
-    
-    console.log(`[Batch Delete] Completed batch for parent: ${parentId}. Deleted ${childrenSnapshot.size} items.`);
 };
 
 
@@ -259,18 +249,28 @@ const NavigatorComponent: React.FC<NavigatorProps> = ({ onNoteSelect, activeNote
 
   // DELETE Note
   const handleDeleteNote = async (noteId: string) => {
-    try {
-      const noteRef = doc(db, 'entities', noteId);
-      await deleteDoc(noteRef);
-      
-      if (activeNoteId === noteId) {
-        onNoteSelect(''); 
-      }
-    } catch (error) {
-      console.error("Error deleting note: ", error);
-      alert("Failed to delete note.");
+    if (!window.confirm("Are you sure you want to delete this note and all its associated side notes?")) {
+        return;
     }
-  };
+
+    try {
+        // Delete all children (side notes) of the main note.
+        await deleteFolderContents(noteId); 
+
+        // delete the main note itself.
+        const noteRef = doc(db, 'entities', noteId);
+        await deleteDoc(noteRef); 
+
+        console.log(`Successfully deleted Note ${noteId} and all side notes.`);
+        
+        // Handle navigation after deletion (e.g., set active note to null)
+
+
+    } catch (error) {
+        console.error("Error deleting note and side notes: ", error);
+        alert("Failed to delete note.");
+    }
+};
 
 
   useEffect(() => {
